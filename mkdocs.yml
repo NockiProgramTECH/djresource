@@ -1,0 +1,86 @@
+site_name: DjResource
+site_description: "Bibliothèque Django : générez automatiquement les vues CRUD, formulaires et routes d'un modèle."
+site_author: Enock Lankonadé
+site_url: https://nockiprogramtech.github.io/djresource/
+repo_url: https://github.com/NockiProgramTECH/djresource
+edit_uri: edit/main/docs/
+
+copyright: "Copyright &copy; 2026 Enock Lankonadé — Licence MIT"
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Passer en mode sombre
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Passer en mode clair
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/NockiProgramTECH/djresource
+  generator: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [djresource]
+          options:
+            show_source: true
+            show_root_heading: false
+            show_category_heading: false
+            heading_level: 3
+
+nav:
+  - Accueil: index.md
+  - Guide:
+      - Installation: guide/installation.md
+      - Démarrage rapide: guide/quickstart.md
+      - Thèmes: guide/themes.md
+      - Personnalisation: guide/customization.md
+      - Fonctionnalités avancées: guide/advanced.md
+  - Référence API:
+      - Classe Resource: api/resource.md
+      - Mixins: api/mixins.md
+      - Balises et filtres: api/templatetags.md
+  - Contribuer: contributing.md
+  - Journal des versions: changelog.md

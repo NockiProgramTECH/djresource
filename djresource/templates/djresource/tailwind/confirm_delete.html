@@ -1,0 +1,16 @@
+{% extends "djresource/tailwind/base.html" %}
+{% load djresource_tags %}
+
+{% block title %}Supprimer — {{ verbose_name|capfirst }}{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Supprimer {{ verbose_name }} #{{ object|get_attr:resource.lookup_field }} ?</h1>
+<div class="bg-yellow-100 text-yellow-800 rounded px-4 py-3 mb-4">
+    Cette action est <strong>irréversible</strong>. Voulez-vous vraiment supprimer « {{ object }} » ?
+</div>
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">Oui, supprimer</button>
+    <a href="{% url url_list %}" class="ml-2 text-gray-600 hover:underline">Annuler</a>
+</form>
+{% endblock %}

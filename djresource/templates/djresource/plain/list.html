@@ -1,0 +1,66 @@
+{% extends "djresource/plain/base.html" %}
+{% load djresource_tags %}
+
+{% block title %}{{ verbose_name_plural|capfirst }}{% endblock %}
+
+{% block content %}
+<div class="djr-header">
+    <h1>{{ verbose_name_plural|capfirst }}</h1>
+    <div>
+        {% block list_header_actions %}{% endblock %}
+        <a href="{% url url_create %}" class="djr-btn djr-btn--primary">+ Ajouter</a>
+    </div>
+</div>
+
+{% block list_top %}{% endblock %}
+
+{% if search_enabled %}
+<form method="get" class="djr-search">
+    <input type="text" name="q" value="{{ search_query }}" class="djr-input" placeholder="Rechercher...">
+    <button type="submit" class="djr-btn djr-btn--secondary">Rechercher</button>
+    {% if search_query %}<a href="{% url url_list %}" class="djr-btn djr-btn--link">Réinitialiser</a>{% endif %}
+</form>
+{% endif %}
+
+<table class="djr-table">
+    <thead>
+        <tr>
+            {% for field in list_display %}
+            <th>
+                {% if field in resource.ordering_fields %}
+                <a href="?sort={{ field }}&dir={% if current_sort == field and current_dir == 'asc' %}desc{% else %}asc{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}">
+                    {{ field|capfirst }}
+                    {% if current_sort == field %}{% if current_dir == 'asc' %}▲{% else %}▼{% endif %}{% endif %}
+                </a>
+                {% else %}{{ field|capfirst }}{% endif %}
+            </th>
+            {% endfor %}
+            <th class="djr-actions">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for object in object_list %}
+        <tr>
+            {% for field in list_display %}<td>{{ object|get_attr:field }}</td>{% endfor %}
+            <td class="djr-actions">
+                <a href="{% url url_detail object|get_attr:resource.lookup_field %}" class="djr-btn djr-btn--link">Voir</a>
+                <a href="{% url url_update object|get_attr:resource.lookup_field %}" class="djr-btn djr-btn--link">Modifier</a>
+                <a href="{% url url_delete object|get_attr:resource.lookup_field %}" class="djr-btn djr-btn--link">Supprimer</a>
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td class="djr-empty" colspan="{{ list_display|length|add:1 }}">Aucun résultat.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+<div class="djr-pagination">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}" class="djr-btn djr-btn--secondary">Précédent</a>{% endif %}
+    <span>Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}" class="djr-btn djr-btn--secondary">Suivant</a>{% endif %}
+</div>
+{% endif %}
+
+{% block list_bottom %}{% endblock %}
+{% endblock %}

@@ -1,0 +1,21 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}DjResource{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'djresource/css/djresource.css' %}">
+</head>
+<body>
+<div class="djr-navbar">DjResource</div>
+<div class="djr-container">
+    {% if messages %}
+        {% for message in messages %}
+            <div class="djr-alert djr-alert--{{ message.tags|default:'info' }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+    {% block content %}{% endblock %}
+</div>
+</body>
+</html>

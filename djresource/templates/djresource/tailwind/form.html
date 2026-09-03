@@ -1,0 +1,31 @@
+{% extends "djresource/tailwind/base.html" %}
+
+{% block title %}{% if object %}Modifier{% else %}Ajouter{% endif %} — {{ verbose_name|capfirst }}{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">{% if object %}Modifier{% else %}Ajouter{% endif %} — {{ verbose_name|capfirst }}</h1>
+
+{% block form_top %}{% endblock %}
+
+<form method="post" novalidate class="bg-white rounded shadow p-6 max-w-xl">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="mb-4 bg-red-100 text-red-800 rounded px-4 py-2">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    {% for field in form %}
+    <div class="mb-4">
+        <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<p class="text-xs text-gray-500 mt-1">{{ field.help_text }}</p>{% endif %}
+        {% for error in field.errors %}<p class="text-xs text-red-600 mt-1">{{ error }}</p>{% endfor %}
+    </div>
+    {% endfor %}
+
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Enregistrer</button>
+    <a href="{% url url_list %}" class="ml-2 text-gray-600 hover:underline">Annuler</a>
+</form>
+
+{% block form_bottom %}{% endblock %}
+{% endblock %}

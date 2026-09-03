@@ -1,0 +1,27 @@
+{% extends "djresource/tailwind/base.html" %}
+{% load djresource_tags %}
+
+{% block title %}{{ verbose_name|capfirst }} — Détail{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">{{ verbose_name|capfirst }} #{{ object|get_attr:resource.lookup_field }}</h1>
+
+<table class="min-w-full bg-white rounded shadow divide-y divide-gray-100">
+    <tbody>
+    {% for field in object|get_fields_display %}
+    <tr>
+        <th class="px-4 py-2 text-left text-sm font-medium text-gray-500 w-1/3">{{ field.label|capfirst }}</th>
+        <td class="px-4 py-2 text-sm text-gray-800">{{ field.value }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% block detail_extra %}{% endblock %}
+
+<div class="mt-4 space-x-2">
+<a href="{% url url_update object|get_attr:resource.lookup_field %}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Modifier</a>
+<a href="{% url url_delete object|get_attr:resource.lookup_field %}" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">Supprimer</a>
+<a href="{% url url_list %}" class="text-gray-600 hover:underline">Retour à la liste</a>
+</div>
+{% endblock %}

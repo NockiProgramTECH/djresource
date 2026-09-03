@@ -1,0 +1,25 @@
+{% extends "djresource/base.html" %}
+{% load djresource_tags %}
+
+{% block title %}{{ verbose_name|capfirst }} — Détail{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">{{ verbose_name|capfirst }} #{{ object|get_attr:resource.lookup_field }}</h1>
+
+<table class="table bg-white shadow-sm">
+    <tbody>
+    {% for field in object|get_fields_display %}
+        <tr>
+            <th style="width: 30%">{{ field.label|capfirst }}</th>
+            <td>{{ field.value }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% block detail_extra %}{% endblock %}
+
+<a href="{% url url_update object|get_attr:resource.lookup_field %}" class="btn btn-primary">Modifier</a>
+<a href="{% url url_delete object|get_attr:resource.lookup_field %}" class="btn btn-outline-danger">Supprimer</a>
+<a href="{% url url_list %}" class="btn btn-outline-secondary">Retour à la liste</a>
+{% endblock %}
