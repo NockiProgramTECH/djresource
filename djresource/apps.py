@@ -3,10 +3,10 @@ from django.apps import AppConfig
 
 class DjresourceConfig(AppConfig):
     """
-    Configuration de l'app djresource.
+    Configuration for the djresource app.
 
-    Doit être ajoutée à INSTALLED_APPS du projet hôte pour que Django
-    trouve les templates fournis par la bibliothèque
+    Must be added to the host project's INSTALLED_APPS so that Django
+    finds the templates provided by the library
     (djresource/templates/djresource/*.html).
     """
 

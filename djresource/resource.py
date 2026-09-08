@@ -2,13 +2,13 @@
 djresource.resource
 ====================
 
-Cœur du framework : la classe `Resource`.
+Core of the library: the `Resource` class.
 
-Une `Resource` représente un modèle Django pour lequel on souhaite générer
-automatiquement les vues CRUD (Create, Read, Update, Delete), le formulaire
-et les routes associées, sans avoir à écrire de code répétitif.
+A `Resource` represents a Django model for which you want to automatically
+generate the CRUD views (Create, Read, Update, Delete), the form and the
+associated routes, without writing repetitive boilerplate.
 
-Exemple minimal
+Minimal example
 ----------------
 
     # produits/resources.py
@@ -17,7 +17,7 @@ Exemple minimal
 
     class ProduitResource(Resource):
         model = Produit
-        fields = ["nom", "prix", "stock"]     # toujours lister explicitement les champs (voir Sécurité)
+        fields = ["nom", "prix", "stock"]     # always list fields explicitly (see Security)
         list_display = ["nom", "prix", "stock"]
         search_fields = ["nom"]
         ordering_fields = ["nom", "prix"]
@@ -30,45 +30,44 @@ Exemple minimal
         path("produits/", include(ProduitResource().urls())),
     ]
 
-Cela génère automatiquement :
-    /produits/                     -> liste (recherche, tri, pagination)
-    /produits/nouveau/             -> création
-    /produits/<pk>/                -> détail
-    /produits/<pk>/modifier/       -> modification
-    /produits/<pk>/supprimer/      -> suppression (confirmation)
+This automatically generates:
+    /produits/                     -> list (search, sort, pagination)
+    /produits/nouveau/             -> create
+    /produits/<pk>/                -> detail
+    /produits/<pk>/modifier/       -> update
+    /produits/<pk>/supprimer/      -> delete (confirmation)
 
-Identifier les objets par autre chose que "pk" (lookup_field)
+Identifying objects by something other than "pk" (lookup_field)
 ------------------------------------------------------------------
-Par défaut, les URLs de détail/modification/suppression utilisent la clé
-primaire (`pk`). Pour utiliser un autre champ (ex: un slug, ou un nom) :
+By default, the detail/update/delete URLs use the primary key (`pk`). To
+use another field (e.g. a slug, or a name):
 
     class ProduitResource(Resource):
         model = Produit
-        lookup_field = "slug"   # doit être unique en base (unique=True)
+        lookup_field = "slug"   # must be unique in the database (unique=True)
 
-Cela génère `/produits/<slug>/`, etc. `lookup_field` DOIT correspondre à
-un champ unique sur le modèle (`unique=True` ou clé primaire), sinon
-plusieurs objets pourraient correspondre à la même URL — une alerte
-`UserWarning` est émise si ce n'est pas le cas.
+This generates `/produits/<slug>/`, etc. `lookup_field` MUST correspond to
+a unique field on the model (`unique=True` or primary key), otherwise
+several objects could match the same URL — a `UserWarning` is raised if
+that's not the case.
 
 Relations (ForeignKey, OneToOneField, ManyToManyField)
 ------------------------------------------------------------
-Django gère nativement les relations dans les formulaires générés : une
-ForeignKey/OneToOneField devient une liste déroulante (choix parmi les
-objets liés, affichés via leur `__str__`), une ManyToManyField devient une
-liste à sélection multiple. Rien à configurer pour que ça fonctionne.
-Pour l'affichage (liste/détail), le framework résout aussi automatiquement
-les relations M2M et les FK inversées (affichage sous forme de liste
-lisible séparée par des virgules). Pensez à `select_related`/
-`prefetch_related` pour éviter les requêtes N+1 sur les relations
-affichées dans `list_display`. Voir README pour des exemples complets.
+Django natively handles relations in generated forms: a
+ForeignKey/OneToOneField becomes a dropdown list (choices among related
+objects, displayed via their `__str__`), a ManyToManyField becomes a
+multi-select list. Nothing to configure for this to work.
+For display (list/detail), the library also automatically resolves M2M
+relations and reverse FKs (displayed as a readable comma-separated list).
+Remember `select_related`/`prefetch_related` to avoid N+1 queries on
+relations shown in `list_display`. See the README for full examples.
 
-Trois façons d'afficher les données (du plus simple au plus libre)
+Three ways to display data (from simplest to most flexible)
 ----------------------------------------------------------------------
-1. Templates du framework tels quels (theme = "bootstrap"/"tailwind"/"plain").
-2. Composants injectés dans vos pages (`{% djresource_list %}` etc.).
-3. Données brutes (`{% djresource_list_data %}`, `get_list_context()`,
-   etc.) : aucun HTML imposé, affichage 100% libre. Voir README.md.
+1. Library templates as-is (theme = "bootstrap"/"tailwind"/"plain").
+2. Components injected into your own pages (`{% djresource_list %}` etc.).
+3. Raw data (`{% djresource_list_data %}`, `get_list_context()`,
+   etc.): no HTML imposed, fully free-form display. See README.md.
 """
 from __future__ import annotations
 
@@ -94,9 +93,9 @@ from .mixins import (
     ResourceUpdateMessageMixin,
 )
 
-# Classes CSS injectées automatiquement sur les widgets du formulaire, selon
-# le thème choisi (utilisées seulement pour les champs non couverts par
-# `widget_classes`, et seulement si `auto_form_css = True`).
+# CSS classes automatically injected on form widgets, depending on the
+# chosen theme (only used for fields not covered by `widget_classes`, and
+# only if `auto_form_css = True`).
 THEME_WIDGET_CLASSES = {
     "bootstrap": {
         "checkbox": "form-check-input",
@@ -120,19 +119,19 @@ _BUILTIN_THEMES = {"bootstrap", "tailwind", "plain"}
 
 class FieldsAllWarning(UserWarning):
     """
-    Émise à l'instanciation quand `fields = "__all__"` (défaut) : tous les
-    champs du modèle sont exposés dans le formulaire généré. Listez
-    explicitement les champs autorisés en écriture (voir README, Sécurité).
+    Raised at instantiation when `fields = "__all__"` (default): all model
+    fields are exposed in the generated form. Explicitly list the fields
+    allowed for writing (see README, Security).
     """
 
 
 class Resource:
     """
-    Classe de base à hériter pour déclarer une ressource CRUD.
+    Base class to subclass in order to declare a CRUD resource.
 
-    Voir le docstring du module pour la liste complète des options et,
-    surtout, la section SÉCURITÉ du README avant tout déploiement en
-    production.
+    See the module docstring for the full list of options and, most
+    importantly, the SECURITY section of the README before any production
+    deployment.
     """
 
     model = None
@@ -146,25 +145,25 @@ class Resource:
     select_related: list = []
     prefetch_related: list = []
 
-    # Champ utilisé pour identifier un objet dans les URLs. "pk" par
-    # défaut. lookup_url_kwarg/lookup_converter sont déduits automatiquement
-    # si non fournis (voir __init__).
+    # Field used to identify an object in URLs. "pk" by default.
+    # lookup_url_kwarg/lookup_converter are inferred automatically if not
+    # provided (see __init__).
     lookup_field = "pk"
     lookup_url_kwarg: str | None = None
     lookup_converter: str | None = None
 
     theme = "bootstrap"
     auto_form_css = True
-    widget_classes: dict = {}   # {"nom_champ": "mes-classes-css"} — prioritaire sur auto_form_css/theme
-    widget_attrs: dict = {}     # {"nom_champ": {"data-x": "1", "maxlength": "50"}} — attributs HTML additionnels
+    widget_classes: dict = {}   # {"field_name": "my-css-classes"} — takes priority over auto_form_css/theme
+    widget_attrs: dict = {}     # {"field_name": {"data-x": "1", "maxlength": "50"}} — extra HTML attributes
 
     template_list = None
     template_form = None
     template_detail = None
     template_delete = None
 
-    # Messages affichés via django.contrib.messages. "%(name)s" est remplacé
-    # par le verbose_name du modèle (create/update) ou par str(objet) (delete).
+    # Messages shown via django.contrib.messages. "%(name)s" is replaced by
+    # the model's verbose_name (create/update) or by str(object) (delete).
     success_message_create = "%(name)s créé avec succès."
     success_message_update = "%(name)s modifié avec succès."
     success_message_delete = "%(name)s supprimé avec succès."
@@ -172,16 +171,16 @@ class Resource:
     def __init__(self):
         if self.model is None:
             raise ValueError(
-                f"{self.__class__.__name__} doit définir l'attribut 'model'."
+                f"{self.__class__.__name__} must define the 'model' attribute."
             )
-        self.name = self.model._meta.model_name  # ex : "produit"
+        self.name = self.model._meta.model_name  # e.g. "produit"
         self.verbose_name = str(self.model._meta.verbose_name)
         self.app_label = self.model._meta.app_label
 
         if self.list_display is None:
             self.list_display = [f.name for f in self.model._meta.fields]
 
-        # Résolution de lookup_url_kwarg / lookup_converter si non fournis
+        # Resolve lookup_url_kwarg / lookup_converter if not provided
         self.lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         if self.lookup_converter is None:
             self.lookup_converter = self._default_lookup_converter()
@@ -190,18 +189,18 @@ class Resource:
 
         if self.fields == "__all__":
             warnings.warn(
-                f"{self.__class__.__name__} : fields='__all__' expose tous les "
-                f"champs du modèle {self.model.__name__} dans le formulaire. "
-                "Listez explicitement les champs autorisés en écriture.",
+                f"{self.__class__.__name__}: fields='__all__' exposes all "
+                f"fields of the {self.model.__name__} model in the form. "
+                "Explicitly list the fields allowed for writing.",
                 FieldsAllWarning,
                 stacklevel=2,
             )
 
     def _default_lookup_converter(self) -> str:
         """
-        Déduit le convertisseur d'URL Django du type du `lookup_field`
-        (`int` pour le pk, `slug` pour un SlugField, `uuid` pour un
-        UUIDField, `str` sinon). Surchargeable via `lookup_converter`.
+        Infers the Django URL converter from the `lookup_field`'s type
+        (`int` for pk, `slug` for a SlugField, `uuid` for a UUIDField,
+        `str` otherwise). Overridable via `lookup_converter`.
         """
         if self.lookup_field == "pk":
             return "int"
@@ -221,17 +220,17 @@ class Resource:
 
     def get_lookup_url(self) -> str:
         """
-        Segment d'URL d'identification d'un objet, ex : `<int:pk>`,
-        `<slug:slug>`, `<uuid:uid>`. Utilisé par `.urls()`.
+        URL segment used to identify an object, e.g. `<int:pk>`,
+        `<slug:slug>`, `<uuid:uid>`. Used by `.urls()`.
         """
         return f"<{self.lookup_converter}:{self.lookup_url_kwarg}>"
 
     def _warn_if_lookup_field_not_unique(self):
         """
-        `lookup_field` doit être unique en base pour identifier un seul
-        objet par URL. On avertit (sans bloquer) si ce n'est visiblement
-        pas le cas — cause fréquente d'un bug "MultipleObjectsReturned"
-        difficile à diagnostiquer plus tard.
+        `lookup_field` must be unique in the database to identify a single
+        object per URL. We warn (without blocking) if this is visibly not
+        the case — a frequent cause of a "MultipleObjectsReturned" bug
+        that's hard to diagnose later.
         """
         if self.lookup_field == "pk":
             return
@@ -242,32 +241,32 @@ class Resource:
         is_unique = getattr(field_obj, "unique", False) or getattr(field_obj, "primary_key", False)
         if not is_unique:
             warnings.warn(
-                f"{self.__class__.__name__} : lookup_field='{self.lookup_field}' n'est pas "
-                f"unique=True sur le modèle {self.model.__name__}. Si deux enregistrements "
-                "partagent la même valeur, les URLs générées échoueront (erreur serveur). "
-                "Ajoutez unique=True au champ, ou utilisez un autre champ (ex: un SlugField).",
+                f"{self.__class__.__name__}: lookup_field='{self.lookup_field}' is not "
+                f"unique=True on the {self.model.__name__} model. If two records "
+                "share the same value, the generated URLs will fail (server error). "
+                "Add unique=True to the field, or use another field (e.g. a SlugField).",
                 stacklevel=3,
             )
 
     # ------------------------------------------------------------------
-    # Contexte métier additionnel (hook d'extension principal)
+    # Additional business context (main extension hook)
     # ------------------------------------------------------------------
     def get_extra_context(self, view):
         """
-        À surcharger pour injecter des données métier supplémentaires dans
-        le contexte de N'IMPORTE QUELLE vue générée — sans avoir à
-        réécrire les vues. `view` peut être None hors d'une vue Django.
+        Override to inject additional business data into the context of
+        ANY generated view — without having to rewrite the views. `view`
+        can be None outside of a Django view.
         """
         return {}
 
     # ------------------------------------------------------------------
-    # Résolution des templates selon le thème
+    # Template resolution based on theme
     # ------------------------------------------------------------------
     def _theme_template(self, kind: str, explicit: str | None) -> str:
         """
-        Résout le chemin du template à utiliser pour `kind`.
-        Priorité : template explicite > thème "bootstrap" (historique,
-        `djresource/<kind>.html`) > autre thème (`djresource/<theme>/<kind>.html`).
+        Resolves the template path to use for `kind`.
+        Priority: explicit template > "bootstrap" theme (historical,
+        `djresource/<kind>.html`) > other theme (`djresource/<theme>/<kind>.html`).
         """
         if explicit:
             return explicit
@@ -276,31 +275,30 @@ class Resource:
         return f"djresource/{self.theme}/{kind}.html"
 
     # ------------------------------------------------------------------
-    # Identification d'un objet (lookup_field)
+    # Identifying an object (lookup_field)
     # ------------------------------------------------------------------
     def get_lookup_value(self, obj):
-        """Retourne la valeur du champ utilisé pour identifier `obj` dans les URLs."""
+        """Returns the value of the field used to identify `obj` in URLs."""
         return getattr(obj, self.lookup_field)
 
     # ------------------------------------------------------------------
-    # Formulaire
+    # Form
     # ------------------------------------------------------------------
     def get_form_class(self):
         """
-        Construit un ModelForm à partir du modèle. Les relations
-        (ForeignKey, OneToOneField, ManyToManyField) sont gérées
-        nativement par Django : liste déroulante pour les relations
-        simples, sélection multiple pour ManyToMany — aucune configuration
-        supplémentaire n'est nécessaire pour qu'elles apparaissent dans le
-        formulaire si elles sont listées dans `fields`.
+        Builds a ModelForm from the model. Relations (ForeignKey,
+        OneToOneField, ManyToManyField) are handled natively by Django:
+        dropdown list for simple relations, multi-select for ManyToMany —
+        no extra configuration is needed for them to appear in the form as
+        long as they're listed in `fields`.
 
-        Applique aussi :
-        - classes CSS par champ : `widget_classes[field]` si fourni,
-          sinon classes du thème si `auto_form_css = True`,
-        - attributs HTML additionnels par champ (`widget_attrs[field]`),
-        - champs `readonly_fields` désactivés (Django ignore la valeur
-          soumise pour un champ `disabled=True`, impossible à contourner
-          en modifiant le POST).
+        Also applies:
+        - per-field CSS classes: `widget_classes[field]` if provided,
+          otherwise theme classes if `auto_form_css = True`,
+        - extra HTML attributes per field (`widget_attrs[field]`),
+        - disabled `readonly_fields` (Django ignores the submitted value
+          for a field with `disabled=True`, which can't be bypassed by
+          tampering with the POST data).
         """
         form_class = modelform_factory(self.model, fields=self.fields)
         readonly_fields = self.readonly_fields
@@ -336,14 +334,13 @@ class Resource:
         return form_class
 
     # ------------------------------------------------------------------
-    # Queryset commun (List / Detail / Update / Delete)
+    # Common queryset (List / Detail / Update / Delete)
     # ------------------------------------------------------------------
     def get_base_queryset(self):
         """
-        Queryset de base utilisé par toutes les vues. À surcharger pour
-        restreindre l'accès (ex : filtrer par propriétaire) — voir
-        avertissement sécurité dans le README : ce filtrage n'est PAS
-        fait automatiquement en V1.
+        Base queryset used by all views. Override to restrict access
+        (e.g. filter by owner) — see the security warning in the README:
+        this filtering is NOT done automatically in V1.
         """
         qs = self.model._default_manager.all()
         if self.select_related:
@@ -353,13 +350,13 @@ class Resource:
         return qs
 
     # ------------------------------------------------------------------
-    # Filtrage de la liste (list_filter)
+    # List filtering (list_filter)
     # ------------------------------------------------------------------
     def get_active_list_filters(self, params):
         """
-        Valide les paramètres de filtrage (`?champ=valeur`, restreints aux
-        champs de `list_filter`). Retourne {champ: valeur} — les valeurs
-        vides ou invalides sont ignorées (pas de filtre).
+        Validates filter parameters (`?field=value`, restricted to
+        `list_filter` fields). Returns {field: value} — empty or invalid
+        values are ignored (no filter).
         """
         from django.db import models as dj_models
 
@@ -382,7 +379,7 @@ class Resource:
 
     @staticmethod
     def _parse_filter_value(field_obj, raw):
-        """Convertit une valeur brute de GET en valeur de filtre (ou lève ValueError)."""
+        """Converts a raw GET value into a filter value (or raises ValueError)."""
         from django.db import models as dj_models
 
         if isinstance(field_obj, dj_models.BooleanField):
@@ -391,25 +388,25 @@ class Resource:
                 return True
             if normalized in ("0", "false", "non", "no"):
                 return False
-            raise ValueError(f"Valeur booléenne invalide : {raw!r}")
+            raise ValueError(f"Invalid boolean value: {raw!r}")
         if field_obj.choices:
             valid = {str(key) for key, _label in field_obj.choices}
             if str(raw) in valid:
                 return raw
-            raise ValueError(f"Valeur hors choices : {raw!r}")
+            raise ValueError(f"Value not in choices: {raw!r}")
         return raw
 
     def apply_list_filters(self, qs, params):
-        """Applique les filtres actifs (`list_filter`) au queryset (cumulés en ET)."""
+        """Applies the active filters (`list_filter`) to the queryset (combined with AND)."""
         for field_name, value in self.get_active_list_filters(params).items():
             qs = qs.filter(**{field_name: value})
         return qs
 
     def get_list_filter_options(self, params):
         """
-        Options des `<select>` de `_filters.html` :
-        [{field, options: [{value, label, selected}]}]. "Tous" (valeur
-        vide) désactive le filtre sur le champ.
+        Options for the `<select>` elements in `_filters.html`:
+        [{field, options: [{value, label, selected}]}]. "Tous" (empty
+        value) disables the filter on that field.
         """
         from django.db import models as dj_models
 
@@ -451,24 +448,24 @@ class Resource:
         return result
 
     # ------------------------------------------------------------------
-    # Permissions (hook à surcharger dans une sous-classe)
+    # Permissions (hook to override in a subclass)
     # ------------------------------------------------------------------
     def get_permissions(self):
         """
-        À surcharger pour retourner une liste de mixins/permission classes
-        Django (ex: [LoginRequiredMixin]), insérés dans le MRO des vues
-        générées. ATTENTION : retourne [] par défaut (aucune restriction).
+        Override to return a list of Django mixins/permission classes
+        (e.g. [LoginRequiredMixin]), inserted into the MRO of the
+        generated views. WARNING: returns [] by default (no restriction).
         """
         return []
 
     def _enforce_permissions(self, request):
         """
-        Applique `get_permissions()` hors d'une vue Django (contextes
-        calculés pour les partiels injectés : `get_list_context`,
-        `get_form_context`, `get_detail_context`). Les pages pleines
-        appliquent déjà ces mixins via `dispatch()` ; sans ce contrôle,
-        un visiteur anonyme pourrait obtenir le contenu d'une Resource
-        protégée via une balise `djresource_*`. Lève PermissionDenied.
+        Applies `get_permissions()` outside of a Django view (contexts
+        computed for injected partials: `get_list_context`,
+        `get_form_context`, `get_detail_context`). Full pages already
+        apply these mixins via `dispatch()`; without this check, an
+        anonymous visitor could obtain the content of a protected
+        Resource via a `djresource_*` tag. Raises PermissionDenied.
         """
         from django.contrib.auth.mixins import PermissionRequiredMixin
         from django.core.exceptions import PermissionDenied
@@ -478,7 +475,7 @@ class Resource:
             return
         user = getattr(request, "user", None)
         if user is None or not getattr(user, "is_authenticated", False):
-            raise PermissionDenied("Authentification requise pour accéder à cette ressource.")
+            raise PermissionDenied("Authentication required to access this resource.")
         for perm in permissions:
             if issubclass(perm, PermissionRequiredMixin):
                 required = getattr(perm, "permission_required", None)
@@ -486,10 +483,10 @@ class Resource:
                     if isinstance(required, str):
                         required = (required,)
                     if not user.has_perms(required):
-                        raise PermissionDenied("Permission insuffisante pour accéder à cette ressource.")
+                        raise PermissionDenied("Insufficient permission to access this resource.")
 
     # ------------------------------------------------------------------
-    # Noms de routes
+    # Route names
     # ------------------------------------------------------------------
     def url_name(self, action: str) -> str:
         return f"{self.name}_{action}"
@@ -498,7 +495,7 @@ class Resource:
         return reverse(self.url_name("list"))
 
     # ------------------------------------------------------------------
-    # Contexte calculé hors vue (pour injection dans une page personnalisée)
+    # Context computed outside a view (for injection into a custom page)
     # ------------------------------------------------------------------
     def _base_url_context(self):
         return {
@@ -514,8 +511,8 @@ class Resource:
 
     def get_list_context(self, request):
         """
-        Calcule le contexte complet d'une liste (recherche, filtres, tri,
-        pagination) sans passer par une ListView. Voir README "Niveau 3".
+        Computes the full context of a list (search, filters, sorting,
+        pagination) without going through a ListView. See README "Level 3".
         """
         self._enforce_permissions(request)
         qs = self.get_base_queryset()
@@ -557,14 +554,15 @@ class Resource:
 
     def get_form_context(self, request, lookup=None):
         """
-        Calcule le contexte d'un formulaire de création (`lookup=None`)
-        ou de modification (`lookup` = valeur du `lookup_field`, `pk` par
-        défaut). Ne gère pas la soumission POST elle-même : le template
-        pointe explicitement (`form_action_url`) vers l'URL générée par
-        le framework, qui gère validation, sauvegarde et redirection.
+        Computes the context of a create form (`lookup=None`) or an
+        update form (`lookup` = value of `lookup_field`, `pk` by
+        default). Does not itself handle the POST submission: the
+        template explicitly points (`form_action_url`) to the URL
+        generated by the library, which handles validation, saving and
+        redirection.
 
-        `get_object_or_404` : une valeur de lookup inexistante renvoie une
-        404 propre plutôt qu'une exception non gérée.
+        `get_object_or_404`: a non-existent lookup value returns a clean
+        404 instead of an unhandled exception.
         """
         self._enforce_permissions(request)
         form_class = self.get_form_class()
@@ -587,8 +585,9 @@ class Resource:
 
     def get_detail_context(self, request, lookup):
         """
-        Calcule le contexte du détail d'un objet précis (`lookup` = valeur
-        du `lookup_field`, `pk` par défaut). Lookup inexistant -> 404 propre.
+        Computes the detail context of a specific object (`lookup` =
+        value of `lookup_field`, `pk` by default). Non-existent lookup ->
+        clean 404.
         """
         self._enforce_permissions(request)
         instance = get_object_or_404(self.get_base_queryset(), **{self.lookup_field: lookup})
@@ -597,7 +596,7 @@ class Resource:
         return context
 
     # ------------------------------------------------------------------
-    # Génération des vues (CBV dynamiques via type())
+    # View generation (dynamic CBVs via type())
     # ------------------------------------------------------------------
     def get_list_view(self):
         resource = self
@@ -694,10 +693,9 @@ class Resource:
     # ------------------------------------------------------------------
     def urls(self):
         """
-        Retourne la liste de routes CRUD prêtes à être branchées dans
-        urls.py via `include(MaResource().urls())`. Le segment d'URL
-        d'identification utilise `get_lookup_url()`
-        (par défaut : `<int:pk>`).
+        Returns the list of CRUD routes ready to be wired into urls.py
+        via `include(MyResource().urls())`. The object-identification URL
+        segment uses `get_lookup_url()` (default: `<int:pk>`).
         """
         lookup_segment = self.get_lookup_url()
         return [

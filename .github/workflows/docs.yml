@@ -34,7 +34,7 @@ jobs:
       - name: Installer MkDocs et dépendances
         run: |
           python -m pip install --upgrade pip
-          pip install mkdocs-material mkdocstrings[python] Django
+          pip install mkdocs-material mkdocstrings[python] mkdocs-static-i18n Django
           pip install -e .   # rend djresource importable pour mkdocstrings
 
       - name: Construire la documentation

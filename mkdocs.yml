@@ -1,11 +1,10 @@
 site_name: DjResource
-site_description: "Bibliothèque Django : générez automatiquement les vues CRUD, formulaires et routes d'un modèle."
+site_description: "Django library: automatically generate CRUD views, forms and routes for a model."
 site_author: Enock Lankonadé
 site_url: https://nockiprogramtech.github.io/djresource/
 repo_url: https://github.com/NockiProgramTECH/djresource
-edit_uri: edit/main/docs/
 
-copyright: "Copyright &copy; 2026 Enock Lankonadé — Licence MIT"
+copyright: "Copyright &copy; 2026 Enock Lankonadé — MIT License"
 
 theme:
   name: material
@@ -17,15 +16,14 @@ theme:
       accent: indigo
       toggle:
         icon: material/brightness-7
-        name: Passer en mode sombre
+        name: Switch to dark mode
     - scheme: slate
       primary: indigo
       accent: indigo
       toggle:
         icon: material/brightness-4
-        name: Passer en mode clair
+        name: Switch to light mode
   features:
-    - navigation.instant
     - navigation.tracking
     - navigation.sections
     - navigation.expand
@@ -69,18 +67,42 @@ plugins:
             show_root_heading: false
             show_category_heading: false
             heading_level: 3
-
-nav:
-  - Accueil: index.md
-  - Guide:
-      - Installation: guide/installation.md
-      - Démarrage rapide: guide/quickstart.md
-      - Thèmes: guide/themes.md
-      - Personnalisation: guide/customization.md
-      - Fonctionnalités avancées: guide/advanced.md
-  - Référence API:
-      - Classe Resource: api/resource.md
-      - Mixins: api/mixins.md
-      - Balises et filtres: api/templatetags.md
-  - Contribuer: contributing.md
-  - Journal des versions: changelog.md
+  - i18n:
+      docs_structure: folder
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          nav:
+            - Home: index.md
+            - Guide:
+                - Installation: guide/installation.md
+                - Quickstart: guide/quickstart.md
+                - Themes: guide/themes.md
+                - Customization: guide/customization.md
+                - Advanced features: guide/advanced.md
+            - API reference:
+                - Resource class: api/resource.md
+                - Mixins: api/mixins.md
+                - Tags and filters: api/templatetags.md
+            - Contributing: contributing.md
+            - Changelog: changelog.md
+        - locale: fr
+          name: Français
+          nav:
+            - Accueil: index.md
+            - Guide:
+                - Installation: guide/installation.md
+                - Démarrage rapide: guide/quickstart.md
+                - Thèmes: guide/themes.md
+                - Personnalisation: guide/customization.md
+                - Fonctionnalités avancées: guide/advanced.md
+            - Référence API:
+                - Classe Resource: api/resource.md
+                - Mixins: api/mixins.md
+                - Balises et filtres: api/templatetags.md
+            - Contribuer: contributing.md
+            - Journal des versions: changelog.md
