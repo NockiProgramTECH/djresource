@@ -1,8 +1,17 @@
 # djresource
 
-Framework additionnel à Django qui génère automatiquement les vues CRUD
+Bibliothèque pour Django qui génère automatiquement les vues CRUD
 (Create, Read, Update, Delete), le formulaire et les routes d'un modèle,
 à partir d'une seule classe `Resource`.
+
+## Installation
+
+```bash
+pip install djresource
+```
+
+Puis ajoutez `"djresource"` dans `INSTALLED_APPS` de votre projet Django.
+Voir `docs/guide/installation.md` pour les détails.
 
 ## 🚀 Démarrage pas à pas dans un TOUT NOUVEAU projet
 
@@ -42,18 +51,14 @@ Le `.` à la fin est important : ça crée le projet directement dans
 `MaBiblio/` au lieu de créer un sous-dossier en plus. Tu dois maintenant
 avoir `manage.py` et un dossier `config/` (avec `settings.py`, `urls.py`).
 
-### Étape 3 — Copier djresource dans ton nouveau projet
+### Étape 3 — Installer djresource dans ton nouveau projet
 
-Copie tout le dossier `djresource/` (celui qu'on a construit) depuis
-`C:\Users\HP\Desktop\DjangoRessource\djresource` vers la racine de
-`MaBiblio/`, à côté de `manage.py`. Tu dois obtenir :
+```bash
+pip install djresource
+```
 
-```
-MaBiblio/
-├── manage.py
-├── config/
-└── djresource/     <- copié depuis l'autre projet
-```
+> En développement local (depuis ce dépôt) : `pip install -e .`
+> à la racine de `DjangoRessource/`, au lieu de copier le dossier à la main.
 
 ### Étape 4 — Créer l'app "bibliotheque"
 
@@ -156,7 +161,7 @@ Ouvre `http://127.0.0.1:8000/livres/` dans ton navigateur. Tu dois voir
 une liste vide avec un bouton "+ Ajouter" (Bootstrap par défaut). Clique
 dessus, crée un livre, reviens à la liste : il doit apparaître.
 
-**Si ça marche → le framework est bien intégré.** Tu peux maintenant
+**Si ça marche → la bibliothèque est bien intégrée.** Tu peux maintenant
 essayer, dans l'ordre, pour t'entraîner :
 1. Changer `theme = "tailwind"` sur `LivreResource` et relancer.
 2. Ajouter `search_fields` déjà fait — teste `?q=` en tapant dans la
@@ -180,7 +185,10 @@ essayer, dans l'ordre, pour t'entraîner :
 
 ## Installation dans un projet existant (résumé rapide)
 
-1. Copier le dossier `djresource/` à la racine de votre projet.
+1. Installer la bibliothèque :
+```bash
+pip install djresource
+```
 2. Ajouter `"djresource"` dans `INSTALLED_APPS`.
 3. Déclarer une ressource pour votre modèle :
 
@@ -384,8 +392,9 @@ class ProduitResource(Resource):
 Cela génère `/produits/<slug>/`, `/produits/<slug>/modifier/`, etc. Le
 framework en déduit automatiquement :
 - `lookup_url_kwarg` (nom du paramètre dans l'URL, = `lookup_field` par défaut),
-- `lookup_converter` (`int` pour `pk`, `str` pour tout autre champ — donc
-  `<str:slug>` ici). Vous pouvez les surcharger explicitement si besoin.
+- `lookup_converter` (déduit du type du champ : `int` pour `pk`,
+  `slug` pour un `SlugField`, `uuid` pour un `UUIDField`, `str` sinon —
+  donc `<slug:slug>` ici). Vous pouvez les surcharger explicitement si besoin.
 
 **Important : `lookup_field` doit être unique en base** (`unique=True` sur
 le champ du modèle, ou une clé primaire). Sinon, deux enregistrements
@@ -585,6 +594,7 @@ complètes de chaque thème.
 | `list_display` | Colonnes affichées dans la liste |
 | `search_fields` | Champs concernés par la recherche texte |
 | `ordering_fields` | Champs sur lesquels le tri par clic est autorisé |
+| `list_filter` | Champs filtrables via `?champ=valeur` (booléens, champs à `choices`) |
 | `paginate_by` | Nombre d'objets par page (défaut : 20) |
 | `select_related` / `prefetch_related` | Optimisation des requêtes sur les relations |
 | `lookup_field` | Champ utilisé pour identifier l'objet dans les URLs (`"pk"` par défaut — voir section dédiée) |

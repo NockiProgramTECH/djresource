@@ -36,6 +36,7 @@ Et l'équivalent d'une ligne dans `urls.py` pour brancher les 5 routes.
 | Formulaire auto | `ModelForm` créé à partir du modèle et des `fields` |
 | Routes nommées | `.urls()` prêt à inclure, noms `<modele>_list`, `<modele>_create`… |
 | Recherche | Barre de recherche texte sur les `search_fields` (`?q=`) |
+| Filtres | Listes déroulantes sur les `list_filter` (`?champ=valeur`, cumulables avec `?q=`) |
 | Tri | Colonnes triables (`?sort=` + `?dir=`) restreintes à `ordering_fields` |
 | Pagination | Configurable via `paginate_by` (défaut : 20) |
 | Lookup personnalisé | URLs détail/update/delete via n'importe quel champ (`lookup_field` : pk, slug, uid…) |

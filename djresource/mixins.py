@@ -148,6 +148,28 @@ class ResourceOrderingMixin:
         return context
 
 
+class ResourceFilterMixin:
+    """
+    Filtre la liste via `?champ=valeur`, restreint aux champs déclarés
+    dans `list_filter` de la Resource (booléens et champs à `choices`
+    typiquement). Les filtres se cumulent entre eux et avec la recherche
+    `?q=` (ET logique). La validation est déléguée à la Resource
+    (`get_active_list_filters`), partagée avec `get_list_context()`.
+    """
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        params = self.request.GET if getattr(self, "request", None) else {}
+        return self.resource.apply_list_filters(qs, params)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        params = self.request.GET if getattr(self, "request", None) else {}
+        context["filters_enabled"] = bool(self.resource.list_filter)
+        context["list_filters"] = self.resource.get_list_filter_options(params)
+        return context
+
+
 # ---------------------------------------------------------------------
 # Sauvegarde : hooks de logique métier (before_save/after_save/clean)
 # ---------------------------------------------------------------------

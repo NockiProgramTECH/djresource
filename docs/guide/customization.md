@@ -68,6 +68,18 @@ class ProduitResource(Resource):
         }
 ```
 
+## Filtrer la liste : `list_filter`
+
+```python
+class ArticleResource(Resource):
+    model = Article
+    list_filter = ["actif", "etat"]   # booléen, champ à choices...
+```
+
+La page de liste affiche alors une liste déroulante par champ
+(`?actif=1`, `?etat=brouillon`…), cumulable avec la recherche `?q=`.
+Les valeurs invalides sont ignorées (pas de filtre).
+
 ## Surcharger un template en entier
 
 Si les blocs ne suffisent pas, `template_list`, `template_detail`,
@@ -90,6 +102,7 @@ class ProduitResource(Resource):
 | `list_display` | Colonnes affichées dans la liste |
 | `search_fields` | Champs concernés par la recherche texte |
 | `ordering_fields` | Champs sur lesquels le tri par clic est autorisé |
+| `list_filter` | Champs filtrables via `?champ=valeur` (booléens, champs à `choices`) |
 | `paginate_by` | Nombre d'objets par page (défaut : 20) |
 | `lookup_field` | Champ utilisé dans les URLs détail/modification/suppression (`"pk"` par défaut, ou `"slug"`, `"uid"`, etc.) |
 | `select_related` / `prefetch_related` | Optimisation des requêtes sur les relations |

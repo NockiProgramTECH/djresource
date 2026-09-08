@@ -85,6 +85,7 @@ from .mixins import (
     ResourceContextMixin,
     ResourceCreateMessageMixin,
     ResourceDeleteMessageMixin,
+    ResourceFilterMixin,
     ResourceFormActionMixin,
     ResourceListContextMixin,
     ResourceLookupMixin,
@@ -117,6 +118,14 @@ THEME_WIDGET_CLASSES = {
 _BUILTIN_THEMES = {"bootstrap", "tailwind", "plain"}
 
 
+class FieldsAllWarning(UserWarning):
+    """
+    Émise à l'instanciation quand `fields = "__all__"` (défaut) : tous les
+    champs du modèle sont exposés dans le formulaire généré. Listez
+    explicitement les champs autorisés en écriture (voir README, Sécurité).
+    """
+
+
 class Resource:
     """
     Classe de base à hériter pour déclarer une ressource CRUD.
@@ -132,6 +141,7 @@ class Resource:
     list_display: list | None = None
     search_fields: list = []
     ordering_fields: list = []
+    list_filter: list = []
     paginate_by = 20
     select_related: list = []
     prefetch_related: list = []
@@ -174,9 +184,47 @@ class Resource:
         # Résolution de lookup_url_kwarg / lookup_converter si non fournis
         self.lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         if self.lookup_converter is None:
-            self.lookup_converter = "int" if self.lookup_field == "pk" else "str"
+            self.lookup_converter = self._default_lookup_converter()
 
         self._warn_if_lookup_field_not_unique()
+
+        if self.fields == "__all__":
+            warnings.warn(
+                f"{self.__class__.__name__} : fields='__all__' expose tous les "
+                f"champs du modèle {self.model.__name__} dans le formulaire. "
+                "Listez explicitement les champs autorisés en écriture.",
+                FieldsAllWarning,
+                stacklevel=2,
+            )
+
+    def _default_lookup_converter(self) -> str:
+        """
+        Déduit le convertisseur d'URL Django du type du `lookup_field`
+        (`int` pour le pk, `slug` pour un SlugField, `uuid` pour un
+        UUIDField, `str` sinon). Surchargeable via `lookup_converter`.
+        """
+        if self.lookup_field == "pk":
+            return "int"
+        try:
+            from django.db import models as dj_models
+
+            field_obj = self.model._meta.get_field(self.lookup_field)
+        except Exception:
+            return "str"
+        if isinstance(field_obj, dj_models.SlugField):
+            return "slug"
+        if isinstance(field_obj, dj_models.UUIDField):
+            return "uuid"
+        if isinstance(field_obj, dj_models.IntegerField):
+            return "int"
+        return "str"
+
+    def get_lookup_url(self) -> str:
+        """
+        Segment d'URL d'identification d'un objet, ex : `<int:pk>`,
+        `<slug:slug>`, `<uuid:uid>`. Utilisé par `.urls()`.
+        """
+        return f"<{self.lookup_converter}:{self.lookup_url_kwarg}>"
 
     def _warn_if_lookup_field_not_unique(self):
         """
@@ -305,6 +353,104 @@ class Resource:
         return qs
 
     # ------------------------------------------------------------------
+    # Filtrage de la liste (list_filter)
+    # ------------------------------------------------------------------
+    def get_active_list_filters(self, params):
+        """
+        Valide les paramètres de filtrage (`?champ=valeur`, restreints aux
+        champs de `list_filter`). Retourne {champ: valeur} — les valeurs
+        vides ou invalides sont ignorées (pas de filtre).
+        """
+        from django.db import models as dj_models
+
+        active = {}
+        if not params:
+            return active
+        for field_name in self.list_filter:
+            raw = params.get(field_name, "")
+            if raw in ("", None):
+                continue
+            try:
+                field_obj = self.model._meta.get_field(field_name)
+            except Exception:
+                continue
+            try:
+                active[field_name] = self._parse_filter_value(field_obj, raw)
+            except ValueError:
+                continue
+        return active
+
+    @staticmethod
+    def _parse_filter_value(field_obj, raw):
+        """Convertit une valeur brute de GET en valeur de filtre (ou lève ValueError)."""
+        from django.db import models as dj_models
+
+        if isinstance(field_obj, dj_models.BooleanField):
+            normalized = str(raw).strip().lower()
+            if normalized in ("1", "true", "oui", "yes"):
+                return True
+            if normalized in ("0", "false", "non", "no"):
+                return False
+            raise ValueError(f"Valeur booléenne invalide : {raw!r}")
+        if field_obj.choices:
+            valid = {str(key) for key, _label in field_obj.choices}
+            if str(raw) in valid:
+                return raw
+            raise ValueError(f"Valeur hors choices : {raw!r}")
+        return raw
+
+    def apply_list_filters(self, qs, params):
+        """Applique les filtres actifs (`list_filter`) au queryset (cumulés en ET)."""
+        for field_name, value in self.get_active_list_filters(params).items():
+            qs = qs.filter(**{field_name: value})
+        return qs
+
+    def get_list_filter_options(self, params):
+        """
+        Options des `<select>` de `_filters.html` :
+        [{field, options: [{value, label, selected}]}]. "Tous" (valeur
+        vide) désactive le filtre sur le champ.
+        """
+        from django.db import models as dj_models
+
+        result = []
+        for field_name in self.list_filter:
+            try:
+                field_obj = self.model._meta.get_field(field_name)
+            except Exception:
+                continue
+            current = params.get(field_name, "") if params else ""
+            current = "" if current is None else str(current)
+            options = [{"value": "", "label": "Tous", "selected": current == ""}]
+            if isinstance(field_obj, dj_models.BooleanField):
+                options += [
+                    {"value": "1", "label": "Oui", "selected": current == "1"},
+                    {"value": "0", "label": "Non", "selected": current == "0"},
+                ]
+            elif field_obj.choices:
+                for key, label in field_obj.choices:
+                    options.append({
+                        "value": str(key),
+                        "label": str(label),
+                        "selected": current == str(key),
+                    })
+            else:
+                distinct = (
+                    self.get_base_queryset()
+                    .order_by(field_name)
+                    .values_list(field_name, flat=True)
+                    .distinct()
+                )
+                for val in distinct:
+                    options.append({
+                        "value": str(val),
+                        "label": str(val),
+                        "selected": current == str(val),
+                    })
+            result.append({"field": field_name, "options": options})
+        return result
+
+    # ------------------------------------------------------------------
     # Permissions (hook à surcharger dans une sous-classe)
     # ------------------------------------------------------------------
     def get_permissions(self):
@@ -314,6 +460,33 @@ class Resource:
         générées. ATTENTION : retourne [] par défaut (aucune restriction).
         """
         return []
+
+    def _enforce_permissions(self, request):
+        """
+        Applique `get_permissions()` hors d'une vue Django (contextes
+        calculés pour les partiels injectés : `get_list_context`,
+        `get_form_context`, `get_detail_context`). Les pages pleines
+        appliquent déjà ces mixins via `dispatch()` ; sans ce contrôle,
+        un visiteur anonyme pourrait obtenir le contenu d'une Resource
+        protégée via une balise `djresource_*`. Lève PermissionDenied.
+        """
+        from django.contrib.auth.mixins import PermissionRequiredMixin
+        from django.core.exceptions import PermissionDenied
+
+        permissions = self.get_permissions()
+        if not permissions:
+            return
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False):
+            raise PermissionDenied("Authentification requise pour accéder à cette ressource.")
+        for perm in permissions:
+            if issubclass(perm, PermissionRequiredMixin):
+                required = getattr(perm, "permission_required", None)
+                if required:
+                    if isinstance(required, str):
+                        required = (required,)
+                    if not user.has_perms(required):
+                        raise PermissionDenied("Permission insuffisante pour accéder à cette ressource.")
 
     # ------------------------------------------------------------------
     # Noms de routes
@@ -341,9 +514,10 @@ class Resource:
 
     def get_list_context(self, request):
         """
-        Calcule le contexte complet d'une liste (recherche, tri,
+        Calcule le contexte complet d'une liste (recherche, filtres, tri,
         pagination) sans passer par une ListView. Voir README "Niveau 3".
         """
+        self._enforce_permissions(request)
         qs = self.get_base_queryset()
 
         query = request.GET.get("q", "").strip() if request else ""
@@ -352,6 +526,9 @@ class Resource:
             for field in self.search_fields:
                 filters |= Q(**{f"{field}__icontains": query})
             qs = qs.filter(filters)
+
+        params = request.GET if request else {}
+        qs = self.apply_list_filters(qs, params)
 
         sort = request.GET.get("sort") if request else None
         direction = request.GET.get("dir", "asc") if request else "asc"
@@ -368,6 +545,8 @@ class Resource:
             "list_display": self.list_display,
             "search_enabled": bool(self.search_fields),
             "search_query": query,
+            "filters_enabled": bool(self.list_filter),
+            "list_filters": self.get_list_filter_options(params),
             "current_sort": sort or "",
             "current_dir": direction,
             "is_paginated": paginator.num_pages > 1,
@@ -387,6 +566,7 @@ class Resource:
         `get_object_or_404` : une valeur de lookup inexistante renvoie une
         404 propre plutôt qu'une exception non gérée.
         """
+        self._enforce_permissions(request)
         form_class = self.get_form_class()
         instance = None
         if lookup is not None:
@@ -410,6 +590,7 @@ class Resource:
         Calcule le contexte du détail d'un objet précis (`lookup` = valeur
         du `lookup_field`, `pk` par défaut). Lookup inexistant -> 404 propre.
         """
+        self._enforce_permissions(request)
         instance = get_object_or_404(self.get_base_queryset(), **{self.lookup_field: lookup})
         context = self._base_url_context()
         context["object"] = instance
@@ -424,6 +605,7 @@ class Resource:
             ResourceListContextMixin,
             ResourceSearchMixin,
             ResourceOrderingMixin,
+            ResourceFilterMixin,
             *self.get_permissions(),
             ListView,
         )
@@ -514,12 +696,10 @@ class Resource:
         """
         Retourne la liste de routes CRUD prêtes à être branchées dans
         urls.py via `include(MaResource().urls())`. Le segment d'URL
-        d'identification utilise `lookup_converter`/`lookup_url_kwarg`
+        d'identification utilise `get_lookup_url()`
         (par défaut : `<int:pk>`).
         """
-        converter = self.lookup_converter
-        kwarg = self.lookup_url_kwarg
-        lookup_segment = f"<{converter}:{kwarg}>"
+        lookup_segment = self.get_lookup_url()
         return [
             path("", self.get_list_view().as_view(), name=self.url_name("list")),
             path("nouveau/", self.get_create_view().as_view(), name=self.url_name("create")),

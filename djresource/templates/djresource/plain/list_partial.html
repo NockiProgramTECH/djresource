@@ -1,4 +1,5 @@
 {% load djresource_tags %}
+{% include "djresource/plain/_filters.html" %}
 {% if search_enabled %}
 <form method="get" class="djr-search">
     <input type="text" name="q" value="{{ search_query }}" class="djr-input" placeholder="Rechercher...">
