@@ -1,5 +1,4 @@
 {% load djresource_tags %}
-
 <table class="djr-detail">
     <tbody>
     {% for field in object|get_fields_display %}
@@ -7,11 +6,3 @@
     {% endfor %}
     </tbody>
 </table>
-
-{% block detail_extra %}{% endblock %}
-
-<p style="margin-top:1rem;">
-<a href="{% url url_update object|get_attr:resource.lookup_field %}" class="djr-btn djr-btn--primary">Modifier</a>
-<a href="{% url url_delete object|get_attr:resource.lookup_field %}" class="djr-btn djr-btn--danger">Supprimer</a>
-<a href="{% url url_list %}" class="djr-btn djr-btn--secondary">Retour à la liste</a>
-</p>

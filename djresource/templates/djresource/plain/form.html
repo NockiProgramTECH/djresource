@@ -7,20 +7,7 @@
 
 {% block form_top %}{% endblock %}
 
-<form method="post" novalidate class="djr-form">
-    {% csrf_token %}
-    {% if form.non_field_errors %}<div class="djr-alert djr-alert--error">{{ form.non_field_errors }}</div>{% endif %}
-    {% for field in form %}
-    <div class="djr-field">
-        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-        {{ field }}
-        {% if field.help_text %}<div class="djr-help">{{ field.help_text }}</div>{% endif %}
-        {% for error in field.errors %}<div class="djr-error">{{ error }}</div>{% endfor %}
-    </div>
-    {% endfor %}
-    <button type="submit" class="djr-btn djr-btn--primary">Enregistrer</button>
-    <a href="{% url url_list %}" class="djr-btn djr-btn--secondary">Annuler</a>
-</form>
+{% include "djresource/plain/form_partial.html" %}
 
 {% block form_bottom %}{% endblock %}
 {% endblock %}

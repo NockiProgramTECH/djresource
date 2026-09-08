@@ -1,12 +1,9 @@
 {% load djresource_tags %}
-
-{% block list_top %}{% endblock %}
-
 {% if search_enabled %}
 <form method="get" class="djr-search">
     <input type="text" name="q" value="{{ search_query }}" class="djr-input" placeholder="Rechercher...">
     <button type="submit" class="djr-btn djr-btn--secondary">Rechercher</button>
-    {% if search_query %}<a href="?" class="djr-btn djr-btn--link">Réinitialiser</a>{% endif %}
+    {% if search_query %}<a href="{% url url_list %}" class="djr-btn djr-btn--link">Réinitialiser</a>{% endif %}
 </form>
 {% endif %}
 
@@ -49,5 +46,3 @@
     {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}" class="djr-btn djr-btn--secondary">Suivant</a>{% endif %}
 </div>
 {% endif %}
-
-{% block list_bottom %}{% endblock %}

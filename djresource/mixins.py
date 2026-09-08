@@ -7,13 +7,22 @@ Mixins utilisés pour composer dynamiquement les vues générées par `Resource`
 Chaque mixin ne fait qu'une seule chose et respecte la chaîne `super()`,
 afin de pouvoir être librement combiné dans `Resource.get_*_view()` sans
 écraser le comportement des autres mixins (voir resource.py).
-"""
-import uuid
 
+ORDRE DES MIXINS DANS LES BASES (important, ne pas changer sans comprendre) :
+Pour Create/Update, l'ordre est :
+    ResourceContextMixin, ResourceFormActionMixin, ResourceCreateMessageMixin,
+    ResourceInlineFormsetMixin, ResourceSaveHooksMixin, *permissions, CreateView
+Le "form_valid" le plus extérieur (message) enveloppe le formset, qui
+enveloppe la sauvegarde réelle (hooks). Chaque mixin appelle super() pour
+déléguer vers le suivant ; l'ordre dans le tuple de bases EST l'ordre
+d'exécution (le premier listé s'exécute en premier).
+"""
 from django.contrib import messages
-from django.db import models
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
+from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 
 
 # ---------------------------------------------------------------------
@@ -53,6 +62,41 @@ class ResourceListContextMixin(ResourceContextMixin):
         return context
 
 
+class ResourceFormActionMixin:
+    """
+    Calcule `form_action_url`, utilisé par le template de formulaire pour
+    poster explicitement vers l'URL de création/modification générée par
+    le framework — nécessaire pour que le formulaire fonctionne aussi
+    lorsqu'il est injecté (via `{% djresource_form %}`) dans une page qui
+    n'est pas elle-même la vue de création/modification.
+    """
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        resource = self.resource
+        obj = getattr(self, "object", None)
+        if obj is not None and obj.pk:
+            lookup_value = resource.get_lookup_value(obj)
+            context["form_action_url"] = reverse(resource.url_name("update"), args=[lookup_value])
+        else:
+            context["form_action_url"] = reverse(resource.url_name("create"))
+        return context
+
+
+class ResourceLookupMixin:
+    """
+    Récupère l'objet via `Resource.lookup_field` ("pk" par défaut, mais
+    peut être n'importe quel champ unique du modèle : "slug", "name"...).
+    """
+
+    def get_object(self, queryset=None):
+        if queryset is None:
+            queryset = self.get_queryset()
+        resource = self.resource
+        lookup_value = self.kwargs[resource.lookup_url_kwarg]
+        return get_object_or_404(queryset, **{resource.lookup_field: lookup_value})
+
+
 # ---------------------------------------------------------------------
 # Recherche et tri (ListView uniquement)
 # ---------------------------------------------------------------------
@@ -84,8 +128,7 @@ class ResourceSearchMixin:
 class ResourceOrderingMixin:
     """
     Permet de trier la liste via `?sort=champ&dir=asc|desc`, restreint
-    aux champs déclarés dans `ordering_fields` (sécurité : on n'autorise
-    pas de tri sur un champ arbitraire non prévu).
+    aux champs déclarés dans `ordering_fields`.
     """
 
     ordering_fields = []
@@ -106,68 +149,150 @@ class ResourceOrderingMixin:
 
 
 # ---------------------------------------------------------------------
-# Résolution de l'objet via lookup_field (Detail / Update / Delete)
+# Sauvegarde : hooks de logique métier (before_save/after_save/clean)
 # ---------------------------------------------------------------------
-class ResourceLookupMixin:
+class ResourceSaveHooksMixin:
     """
-    Résout l'objet via `resource.lookup_field` (par défaut "pk") au lieu de
-    se reposer sur le pk Django. Permet des URLs propres : slug, uid, code...
+    Remplace le form_valid() par défaut de Create/UpdateView pour appeler
+    les hooks de logique métier de la Resource (`clean`, `before_save`,
+    `after_save`) autour de la sauvegarde.
 
-    `lookup_field` peut être n'importe quel champ du modèle ("pk", "slug",
-    "uid", "uuid", "code", ...). La valeur vient de l'URL (`self.kwargs`)
-    sous forme de chaîne : on la convertit vers le bon type selon le champ
-    (UUID, entier, chaîne) avant de filtrer le queryset.
+    Utilise `form.save(commit=False)` pour pouvoir intervenir avant
+    l'écriture en base, puis appelle explicitement `save_m2m()` (requis
+    par Django dès qu'on utilise `commit=False` sur un ModelForm ayant
+    des champs ManyToMany — sans ça, les relations M2M ne seraient
+    jamais enregistrées).
     """
 
-    def get_object(self, queryset=None):
-        if queryset is None:
-            queryset = self.get_queryset()
+    def form_valid(self, form):
+        resource = self.resource
+        is_new = form.instance.pk is None
+        instance = form.save(commit=False)
 
-        field_name = self.resource.lookup_field
-        lookup_value = self.kwargs.get(field_name)
+        try:
+            resource.clean(instance, self.request)
+        except DjangoValidationError as exc:
+            form.add_error(None, exc)
+            return self.form_invalid(form)
 
-        # Aucune valeur de lookup dans l'URL : on laisse SingleObjectMixin
-        # tenter sa résolution native (pk / slug), pour rester compatible.
-        if lookup_value is None:
-            return super().get_object(queryset=queryset)
+        resource.before_save(instance, self.request, is_new)
+        instance.save()
+        if hasattr(form, "save_m2m"):
+            form.save_m2m()
+        resource.after_save(instance, self.request, is_new)
 
-        # Conversion de la chaîne d'URL vers le type du champ du modèle.
-        if field_name == "pk":
-            model_field = self.resource.model._meta.pk
-        else:
-            model_field = self.resource.model._meta.get_field(field_name)
-        if isinstance(model_field, models.UUIDField):
-            lookup_value = uuid.UUID(str(lookup_value))
-        elif isinstance(model_field, (models.IntegerField, models.AutoField)):
-            lookup_value = int(lookup_value)
+        self.object = instance
+        return HttpResponseRedirect(self.get_success_url())
 
-        return get_object_or_404(queryset, **{field_name: lookup_value})
+
+class ResourceDeleteHooksMixin:
+    """
+    Appelle `Resource.before_delete()` / `after_delete()` autour de la
+    suppression. `before_delete` peut lever `ValidationError` pour
+    empêcher la suppression (message d'erreur affiché, objet conservé).
+    """
+
+    def form_valid(self, form):
+        resource = self.resource
+        instance = self.object
+        try:
+            resource.before_delete(instance, self.request)
+        except DjangoValidationError as exc:
+            messages.error(self.request, str(exc))
+            return HttpResponseRedirect(self.request.path)
+
+        response = super().form_valid(form)  # exécute la suppression réelle (Django)
+        resource.after_delete(instance, self.request)
+        return response
+
+
+# ---------------------------------------------------------------------
+# Formsets inline (édition d'objets liés dans le même formulaire)
+# ---------------------------------------------------------------------
+class ResourceInlineFormsetMixin:
+    """
+    Gère les formsets déclarés via `Resource.inlines` : instanciation
+    (GET), validation (POST), et sauvegarde APRÈS la sauvegarde de
+    l'objet parent (nécessaire : les lignes liées ont besoin du `pk` du
+    parent, qui n'existe qu'une fois celui-ci enregistré).
+
+    Doit être placé AVANT `ResourceSaveHooksMixin` dans les bases (donc
+    son `form_valid` s'exécute en premier, et son `super().form_valid()`
+    délègue la sauvegarde du parent au mixin suivant).
+    """
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if "inline_formsets" not in context:
+            context["inline_formsets"] = self._build_formsets(
+                instance=getattr(self, "object", None), data=None, files=None
+            )
+        return context
+
+    def _build_formsets(self, instance, data, files):
+        formsets = []
+        for inline in self.resource.inlines:
+            formset_class = inline.get_formset_class(self.resource.model)
+            if data is not None:
+                formsets.append(formset_class(data, files, instance=instance))
+            else:
+                formsets.append(formset_class(instance=instance))
+        return formsets
+
+    def form_valid(self, form):
+        if not self.resource.inlines:
+            return super().form_valid(form)
+
+        formsets = self._build_formsets(
+            instance=form.instance, data=self.request.POST, files=self.request.FILES
+        )
+        if not all(fs.is_valid() for fs in formsets):
+            return self.render_to_response(
+                self.get_context_data(form=form, inline_formsets=formsets)
+            )
+
+        # Sauvegarde le parent d'abord (délègue à ResourceSaveHooksMixin,
+        # qui appelle avant/après-hooks) : self.object a un pk après ça.
+        response = super().form_valid(form)
+
+        for formset in formsets:
+            formset.instance = self.object
+            formset.save()
+
+        return response
 
 
 # ---------------------------------------------------------------------
 # Messages de succès (Create / Update / Delete)
 # ---------------------------------------------------------------------
 class ResourceCreateMessageMixin:
-    """Ajoute un message de succès (django.contrib.messages) après création."""
+    """
+    Ajoute un message de succès après création. Ne l'ajoute que si la
+    réponse est une redirection : si un formset inline est invalide,
+    form_valid() peut renvoyer un simple ré-affichage du formulaire (200)
+    plutôt qu'une redirection — dans ce cas, pas de faux message de succès.
+    """
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        messages.success(
-            self.request,
-            self.resource.success_message_create % {"name": self.resource.verbose_name},
-        )
+        if isinstance(response, HttpResponseRedirect):
+            messages.success(
+                self.request,
+                self.resource.success_message_create % {"name": self.resource.verbose_name},
+            )
         return response
 
 
 class ResourceUpdateMessageMixin:
-    """Ajoute un message de succès après modification."""
+    """Ajoute un message de succès après modification (même garde qu'au-dessus)."""
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        messages.success(
-            self.request,
-            self.resource.success_message_update % {"name": self.resource.verbose_name},
-        )
+        if isinstance(response, HttpResponseRedirect):
+            messages.success(
+                self.request,
+                self.resource.success_message_update % {"name": self.resource.verbose_name},
+            )
         return response
 
 

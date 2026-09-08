@@ -19,8 +19,9 @@ class ArticleResource(Resource):
 
     model = Article
     fields = ["titre", "slug"]
-    list_display = ["titre", "slug"]
+    list_display = ["titre", "slug", "actif", "etat"]
     lookup_field = "slug"
+    list_filter = ["actif", "etat"]
     theme = "tailwind"
 
 

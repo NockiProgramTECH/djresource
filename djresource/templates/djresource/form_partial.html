@@ -1,7 +1,13 @@
-{% load djresource_tags %}
-{% block form_top %}{% endblock %}
-
-<form method="post" novalidate action="{% if object %}{% url url_update object|get_attr:resource.lookup_field %}{% else %}{% url url_create %}{% endif %}" {% if form.is_multipart %}enctype="multipart/form-data"{% endif %} class="bg-white p-4 rounded shadow-sm">
+{# djresource/form_partial.html : composant formulaire réutilisable.
+   enctype="multipart/form-data" est INDISPENSABLE dès qu'un champ de type
+   FileField/ImageField existe sur le modèle : sans lui, le navigateur
+   n'envoie jamais le fichier sélectionné, et Django voit le champ comme
+   vide ("This field is required.") même si un fichier a bien été choisi.
+   Poste explicitement vers form_action_url (calculé par
+   Resource.get_form_context / ResourceFormActionMixin), pas vers l'URL
+   courante : indispensable pour fonctionner une fois injecté dans une
+   page qui n'est pas elle-même la vue de création/modification. #}
+<form method="post" action="{{ form_action_url }}" enctype="multipart/form-data" novalidate class="bg-white p-4 rounded shadow-sm">
     {% csrf_token %}
 
     {% if form.non_field_errors %}
@@ -22,7 +28,5 @@
     {% endfor %}
 
     <button type="submit" class="btn btn-primary">Enregistrer</button>
-    <a href="{% url url_list %}" class="btn btn-outline-secondary">Annuler</a>
+    {% if url_list %}<a href="{% url url_list %}" class="btn btn-outline-secondary">Annuler</a>{% endif %}
 </form>
-
-{% block form_bottom %}{% endblock %}

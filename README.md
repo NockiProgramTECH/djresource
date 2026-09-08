@@ -1,52 +1,188 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/NockiProgramTECH/djresource/main/docs/assets/logo.svg" alt="DjResource" width="120" />
-</p>
+# djresource
 
-<h1 align="center">DjResource</h1>
+Framework additionnel à Django qui génère automatiquement les vues CRUD
+(Create, Read, Update, Delete), le formulaire et les routes d'un modèle,
+à partir d'une seule classe `Resource`.
 
-<p align="center">
-  <em>Générez tout le CRUD Django d'un modèle en une seule classe.</em>
-</p>
+## 🚀 Démarrage pas à pas dans un TOUT NOUVEAU projet
 
-<p align="center">
-  <a href="https://pypi.org/project/djresource/"><img src="https://img.shields.io/pypi/v/djresource.svg?color=4f46e5&label=PyPI" alt="PyPI version" /></a>
-  <a href="https://pypi.org/project/djresource/"><img src="https://img.shields.io/pypi/pyversions/djresource.svg?color=4f46e5" alt="Versions Python" /></a>
-  <a href="https://pypi.org/project/djresource/"><img src="https://img.shields.io/pypi/djversions/djresource.svg?color=4f46e5" alt="Versions Django" /></a>
-  <a href="https://github.com/NockiProgramTECH/djresource/actions/workflows/test.yml"><img src="https://github.com/NockiProgramTECH/djresource/actions/workflows/test.yml/badge.svg" alt="Tests" /></a>
-  <a href="https://github.com/NockiProgramTECH/djresource/actions/workflows/docs.yml"><img src="https://github.com/NockiProgramTECH/djresource/actions/workflows/docs.yml/badge.svg" alt="Documentation" /></a>
-  <a href="https://github.com/NockiProgramTECH/djresource/blob/main/LICENSE"><img src="https://img.shields.io/badge/licence-MIT-4f46e5.svg" alt="Licence MIT" /></a>
-</p>
+Cette section est faite pour que tu essaies toi-même, dans un projet vide
+(pas le projet `demo/` fourni), avec un exemple différent (une petite
+bibliothèque de livres) pour bien comprendre chaque étape.
 
----
+### Étape 0 — Prérequis
 
-**DjResource** est une bibliothèque pour **Django** qui génère automatiquement les vues CRUD (Create, Read, Update, Delete), le formulaire et les routes d'un modèle — à partir d'une seule classe `Resource`. Fini le code répétitif : vues, formulaires et templates sont créés pour vous, tout en restant 100 % surchargeables.
+- Python installé (vérifie avec `python --version` dans un terminal).
+- Un terminal ouvert (PowerPoint ou CMD sur Windows).
 
-- **⚡ Zéro code CRUD à écrire** : une classe, cinq routes, un CRUD complet.
-- **🎨 3 thèmes prêts à l'emploi** : Bootstrap 5, Tailwind, Plain.
-- **🔌 Extensible** : templates surchargeables, contexte métier, permissions.
-- **🛡️ Sécurisé** : permissions appliquées aux partiels injectés, garde-fou anti-mass assignment.
-- **📦 Prêt pour la production** : recherche, tri, pagination, messages de succès, optimisation N+1.
-
----
-
-## 🚀 Installation
+### Étape 1 — Créer le dossier du projet et l'environnement virtuel
 
 ```bash
-pip install djresource
+mkdir C:\Users\HP\Desktop\MaBiblio
+cd C:\Users\HP\Desktop\MaBiblio
+
+python -m venv .venv
+.venv\Scripts\activate
 ```
 
-Puis ajoutez `"djresource"` dans `INSTALLED_APPS` :
+Ton invite de commande doit maintenant afficher `(.venv)` au début de la
+ligne — ça veut dire que l'environnement virtuel est actif.
+
+```bash
+pip install Django
+```
+
+### Étape 2 — Créer le projet Django
+
+```bash
+django-admin startproject config .
+```
+
+Le `.` à la fin est important : ça crée le projet directement dans
+`MaBiblio/` au lieu de créer un sous-dossier en plus. Tu dois maintenant
+avoir `manage.py` et un dossier `config/` (avec `settings.py`, `urls.py`).
+
+### Étape 3 — Copier djresource dans ton nouveau projet
+
+Copie tout le dossier `djresource/` (celui qu'on a construit) depuis
+`C:\Users\HP\Desktop\DjangoRessource\djresource` vers la racine de
+`MaBiblio/`, à côté de `manage.py`. Tu dois obtenir :
+
+```
+MaBiblio/
+├── manage.py
+├── config/
+└── djresource/     <- copié depuis l'autre projet
+```
+
+### Étape 4 — Créer l'app "bibliotheque"
+
+```bash
+python manage.py startapp bibliotheque
+```
+
+### Étape 5 — Déclarer les apps dans settings.py
+
+Ouvre `config/settings.py`, trouve `INSTALLED_APPS` et ajoute les deux
+lignes en gras (conceptuellement) :
 
 ```python
 INSTALLED_APPS = [
-    # ...
-    "djresource",
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "djresource",       # <- ajouté
+    "bibliotheque",     # <- ajouté
 ]
 ```
 
-## ⚡ Démarrage rapide
+Vérifie aussi que `django.contrib.messages.context_processors.messages`
+est bien dans `TEMPLATES` → `OPTIONS` → `context_processors` (c'est le
+cas par défaut avec `startproject`, donc normalement rien à faire).
 
-Déclarez une ressource pour votre modèle :
+### Étape 6 — Créer le modèle
+
+Ouvre `bibliotheque/models.py` :
+
+```python
+from django.db import models
+
+
+class Livre(models.Model):
+    titre = models.CharField("Titre", max_length=200)
+    auteur = models.CharField("Auteur", max_length=150)
+    annee = models.PositiveIntegerField("Année de publication")
+    disponible = models.BooleanField("Disponible", default=True)
+
+    class Meta:
+        verbose_name = "livre"
+        verbose_name_plural = "livres"
+
+    def __str__(self):
+        return self.titre
+```
+
+### Étape 7 — Déclarer la Resource
+
+Crée un fichier `bibliotheque/resources.py` :
+
+```python
+from djresource.resource import Resource
+from .models import Livre
+
+
+class LivreResource(Resource):
+    model = Livre
+    fields = ["titre", "auteur", "annee", "disponible"]
+    list_display = ["titre", "auteur", "annee", "disponible"]
+    search_fields = ["titre", "auteur"]
+    ordering_fields = ["titre", "annee"]
+```
+
+### Étape 8 — Brancher les routes
+
+Ouvre `config/urls.py` :
+
+```python
+from django.contrib import admin
+from django.urls import path, include
+from bibliotheque.resources import LivreResource
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("livres/", include(LivreResource().urls())),
+]
+```
+
+### Étape 9 — Migrations
+
+```bash
+python manage.py makemigrations bibliotheque
+python manage.py migrate
+```
+
+Si tout se passe bien, tu verras des lignes `Applying bibliotheque.0001_initial... OK`.
+
+### Étape 10 — Lancer et tester
+
+```bash
+python manage.py runserver
+```
+
+Ouvre `http://127.0.0.1:8000/livres/` dans ton navigateur. Tu dois voir
+une liste vide avec un bouton "+ Ajouter" (Bootstrap par défaut). Clique
+dessus, crée un livre, reviens à la liste : il doit apparaître.
+
+**Si ça marche → le framework est bien intégré.** Tu peux maintenant
+essayer, dans l'ordre, pour t'entraîner :
+1. Changer `theme = "tailwind"` sur `LivreResource` et relancer.
+2. Ajouter `search_fields` déjà fait — teste `?q=` en tapant dans la
+   barre de recherche de la liste.
+3. Créer une page perso (`bibliotheque/views.py` + template) qui utilise
+   `{% djresource_list_data "bibliotheque.resources.LivreResource" as livres %}`
+   pour afficher les livres en cartes plutôt qu'en tableau — voir la
+   section "Niveau 3" plus bas, et l'exemple `boutique_*` du projet `demo/`.
+
+### Erreurs fréquentes (et comment les lire)
+
+| Message d'erreur | Cause probable | Solution |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'djresource'` | Le dossier `djresource/` n'est pas à la racine, ou l'environnement virtuel n'est pas activé | Vérifie l'emplacement du dossier et que `(.venv)` est affiché dans le terminal |
+| `TemplateDoesNotExist: djresource/list.html` | `"djresource"` n'est pas dans `INSTALLED_APPS`, ou mal orthographié | Vérifie l'étape 5 |
+| `NoReverseMatch` sur `livre_list` ou similaire | Les routes ne sont pas branchées, ou `LivreResource().urls()` n'est pas inclus | Vérifie l'étape 8 |
+| `django.db.utils.OperationalError: no such table` | Migrations pas appliquées | Relance l'étape 9 (`makemigrations` puis `migrate`) |
+| Page blanche / erreur 500 avec `DEBUG = True` | Django affiche la trace complète : lis la dernière ligne, elle indique presque toujours le fichier et la ligne fautifs | Copie l'erreur ici si besoin, je t'aide à la lire |
+
+---
+
+## Installation dans un projet existant (résumé rapide)
+
+1. Copier le dossier `djresource/` à la racine de votre projet.
+2. Ajouter `"djresource"` dans `INSTALLED_APPS`.
+3. Déclarer une ressource pour votre modèle :
 
 ```python
 # produits/resources.py
@@ -55,13 +191,13 @@ from .models import Produit
 
 class ProduitResource(Resource):
     model = Produit
-    fields = ["nom", "prix", "stock"]
+    fields = ["nom", "prix", "stock"]     # toujours lister explicitement les champs (voir Sécurité)
     list_display = ["nom", "prix", "stock"]
     search_fields = ["nom"]
     ordering_fields = ["nom", "prix"]
 ```
 
-Branchez les routes — **une seule ligne** :
+4. Brancher les routes :
 
 ```python
 # urls.py
@@ -73,7 +209,7 @@ urlpatterns = [
 ]
 ```
 
-C'est tout. Le CRUD complet est disponible :
+Cela génère automatiquement :
 
 | URL | Vue |
 |---|---|
@@ -83,9 +219,19 @@ C'est tout. Le CRUD complet est disponible :
 | `/produits/<pk>/modifier/` | Modification |
 | `/produits/<pk>/supprimer/` | Suppression (avec confirmation) |
 
-## 🎨 Thèmes
+## Trois niveaux de contrôle sur l'affichage
 
-Choisissez le style visuel avec l'attribut `theme` :
+> **Pour un vrai projet (site avec sa propre identité visuelle, e-commerce,
+> etc.), le Niveau 3 ci-dessous est le pattern à utiliser.** Les niveaux 1
+> et 2 servent surtout à prototyper vite ou à dépanner un dashboard interne
+> sans se soucier du design. Dès que vous avez vos propres templates,
+> passez directement au Niveau 3 : djresource ne vous impose alors plus
+> aucun HTML, seulement la logique (recherche, tri, pagination, validation,
+> sauvegarde, redirection).
+
+Du plus rapide (prototypage) au plus libre (site avec identité visuelle propre) :
+
+### Niveau 1 — Templates du framework tels quels
 
 ```python
 class ProduitResource(Resource):
@@ -93,127 +239,404 @@ class ProduitResource(Resource):
     theme = "tailwind"   # "bootstrap" (défaut) | "tailwind" | "plain"
 ```
 
-- **`"bootstrap"`** (défaut) — Bootstrap 5 via CDN.
-- **`"tailwind"`** — Tailwind via CDN (`cdn.tailwindcss.com`, idéal pour prototyper).
-- **`"plain"`** — HTML sémantique + feuille de style minimale (classes `djr-`), parfait pour écrire son propre CSS.
+- **`"bootstrap"`** (défaut) : Bootstrap 5 via CDN.
+- **`"tailwind"`** : Tailwind via CDN (prototype ; prévoir un vrai pipeline de build pour la prod).
+- **`"plain"`** : HTML sémantique + CSS minimal (`djresource/static/djresource/css/djresource.css`),
+  classes préfixées `djr-`, pensé pour être réécrit à la main.
 
-## 🔗 Changer le champ de lookup dans les URLs
+### Niveau 2 — Composants tout faits injectés dans vos pages
 
-Par défaut les URLs de détail, modification et suppression utilisent le pk du
-modèle (`<int:pk>`). Vous pouvez les basculer sur n'importe quel champ du
-modèle via l'attribut `lookup_field` :
+Vous avez déjà une page (dashboard, etc.) et voulez y injecter le tableau
+ou le formulaire du thème choisi, tel quel :
+
+```html
+{% load djresource_tags %}
+<h1>Mon tableau de bord</h1>
+{% djresource_list "produits.resources.ProduitResource" %}
+{% djresource_form "produits.resources.ProduitResource" %}
+{% djresource_detail "produits.resources.ProduitResource" produit.pk %}
+```
+
+### Niveau 3 — Données brutes, affichage 100% libre (cartes, e-commerce...)
+
+Aucun HTML n'est imposé : vous bouclez vous-même sur les objets pour
+construire cartes, grille, carrousel, avec **n'importe quel framework
+CSS** (ou aucun), vos propres classes, vos propres attributs `data-*`, et
+vos propres balises `<meta>` (SEO).
+
+```html
+{% load djresource_tags %}
+{% djresource_list_data "produits.resources.ProduitResource" as produits %}
+
+<div class="ma-grille-de-cartes">
+  {% for produit in produits.object_list %}
+    <article class="ma-carte" data-produit-id="{{ produit.pk }}">
+      <h3>{{ produit.nom }}</h3>
+      <p>{{ produit.prix }} FCFA</p>
+      <a href="{% url produits.url_detail produit.pk %}">Voir</a>
+    </article>
+  {% endfor %}
+</div>
+
+{% if produits.is_paginated %}
+  {% if produits.page_obj.has_next %}
+    <a href="?page={{ produits.page_obj.next_page_number }}">Suivant</a>
+  {% endif %}
+{% endif %}
+```
+
+Pour un détail avec ses propres meta tags SEO et du contenu statique :
+
+```html
+{% djresource_detail_data "produits.resources.ProduitResource" produit_id as d %}
+<title>{{ d.object.nom }}</title>
+<meta name="description" content="{{ d.object.description|truncatewords:20 }}">
+<h1>{{ d.object.nom }}</h1>
+<p>Garantie satisfaction 7 jours — offre valable en boutique.</p>
+```
+
+Et pour un formulaire mis en page entièrement à la main — **le pattern le
+plus important pour un vrai site** : UN SEUL template, réutilisé pour
+créer ET modifier un objet. Cette vue gère les deux cas :
+
+```python
+# produits/views.py
+from django.shortcuts import render
+from .resources import ProduitResource
+
+def produit_formulaire(request, lookup=None):
+    """
+    lookup=None    -> formulaire de création, vide
+    lookup="xyz"   -> formulaire de modification, pré-rempli
+
+    Dans les deux cas, djresource calcule déjà `form` (le ModelForm,
+    bindé ou non selon le cas) et `form_action_url` (l'URL de création
+    OU de modification, selon le cas) — le template n'a RIEN à savoir
+    de cette différence, il poste juste vers `form_action_url`.
+    """
+    resource = ProduitResource()
+    context = resource.get_form_context(request, lookup=lookup)
+    return render(request, "produits/mon_formulaire.html", context)
+```
+
+```python
+# urls.py
+path("produits/ajouter/", produit_formulaire, name="produit_ajouter"),
+path("produits/<slug:lookup>/modifier/", produit_formulaire, name="produit_modifier"),
+```
+
+```html
+{# produits/templates/produits/mon_formulaire.html — UN SEUL fichier pour les deux cas #}
+<form method="post" action="{{ form_action_url }}" enctype="multipart/form-data">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="erreur">{{ form.non_field_errors }}</div>{% endif %}
+  {% for field in form %}
+    <div class="champ">
+      <label>{{ field.label }}</label>
+      {{ field }}
+      {% for error in field.errors %}<div class="erreur">{{ error }}</div>{% endfor %}
+    </div>
+  {% endfor %}
+  <button type="submit">Enregistrer</button>
+</form>
+```
+
+Django pré-remplit automatiquement le formulaire quand une instance existe
+(`ModelForm(instance=...)`, fait par `get_form_context`) : vous n'avez
+rien à tester ("si c'est une modification, afficher X") dans le template,
+le même code fonctionne dans les deux cas. `enctype="multipart/form-data"`
+est obligatoire dès qu'un champ fichier/image existe sur le modèle —
+contrairement aux balises `{% djresource_form %}`/`form_partial.html` du
+framework (qui l'incluent déjà), un template 100% à vous doit le
+déclarer lui-même.
+
+**Exemple complet fonctionnel**, avec liste en cartes ET ce pattern
+créer/modifier réutilisé, dans le projet `demo/` : `app/views.py`
+(`produits_cartes`, `produit_formulaire`) + `app/templates/app/produits_cartes.html`
++ `app/templates/app/produit_form.html`. Routes : `/cartes/`,
+`/cartes/ajouter/`, `/cartes/<slug>/modifier/`.
+
+Les mêmes données sont accessibles depuis une **vue Python**, sans balise
+de template, via `get_list_context(request)`, `get_form_context(request, lookup=None)`,
+`get_detail_context(request, lookup)` sur `Resource` — utile si vous préférez
+tout construire côté vue plutôt que côté template. `lookup` est la valeur
+du `lookup_field` de la ressource (`pk` par défaut — voir section dédiée
+plus bas).
+
+**Exemple complet fonctionnel** dans le projet de démo : `demo/produits/views.py`
+(`boutique_liste`, `boutique_detail`) + `demo/produits/templates/produits/boutique_*.html`
+— une page boutique en cartes avec CSS maison (ni Bootstrap, ni Tailwind,
+ni le thème du framework), et une fiche produit avec meta tags SEO et
+info statique complémentaire (garantie). Routes : `/boutique/` et `/boutique/<pk>/`.
+
+## Identifier les objets autrement que par `pk` (lookup_field)
+
+Par défaut, les URLs de détail/modification/suppression utilisent la clé
+primaire (`/produits/3/`). Pour utiliser un autre champ — un slug, un nom,
+une référence — sur les URLs :
 
 ```python
 class ProduitResource(Resource):
     model = Produit
-    lookup_field = "slug"        # → <slug:slug> dans les URLs
-    # ou "uid" / "uuid" / "code" / tout champ du modèle
+    lookup_field = "slug"   # doit être unique=True sur le modèle
 ```
 
-Les URLs générées deviennent :
-`/produits/riz-local/`, `/produits/riz-local/modifier/`, etc.
+Cela génère `/produits/<slug>/`, `/produits/<slug>/modifier/`, etc. Le
+framework en déduit automatiquement :
+- `lookup_url_kwarg` (nom du paramètre dans l'URL, = `lookup_field` par défaut),
+- `lookup_converter` (`int` pour `pk`, `str` pour tout autre champ — donc
+  `<str:slug>` ici). Vous pouvez les surcharger explicitement si besoin.
 
-La bibliothèque détecte automatiquement le type du champ et choisit le
-convertisseur Django approprié :
+**Important : `lookup_field` doit être unique en base** (`unique=True` sur
+le champ du modèle, ou une clé primaire). Sinon, deux enregistrements
+pourraient partager la même URL — le framework émet un `UserWarning` au
+démarrage si ce n'est pas le cas (ex: `name = models.CharField(...)` sans
+`unique=True` — c'est probablement ce qu'il vous manque si vous avez
+défini `lookup_field = "name"`) :
 
-| Champ | Convertisseur | Exemple d'URL |
-|---|---|---|
-| `IntegerField` / `AutoField` (pk) | `<int:nom>` | `/produits/42/` |
-| `SlugField` | `<slug:nom>` | `/produits/riz-local/` |
-| `UUIDField` | `<uuid:nom>` | `/produits/550e8400-.../` |
-| tout autre champ (`CharField`…) | `<str:nom>` | `/produits/CODE123/` |
+```python
+class Produit(models.Model):
+    name = models.CharField(max_length=100, unique=True)   # <- ajouter unique=True
+```
 
-Les templates s'adaptent automatiquement : les liens `Voir`, `Modifier`,
-`Supprimer` dans les listes et les détails utilisent la valeur du champ de
-lookup. Exemple complet avec `lookup_field = "slug"` : modèle `Article` et
-resource `ArticleResource` dans la suite de tests (`tests/models.py`,
-`tests/resources.py`, `tests/test_crud.py`).
+Sans `unique=True`, la recherche d'un objet par ce champ peut lever une
+erreur serveur si deux produits ont le même nom. Un `SlugField` dédié
+(`models.SlugField(unique=True)`, généré depuis le nom via `slugify`) est
+souvent un meilleur choix qu'un champ texte libre pour un `lookup_field`,
+car il est prévu pour être utilisé dans une URL (pas d'espaces, d'accents,
+de caractères spéciaux).
 
-## 🛡️ Sécurité
+Toutes les balises (`djresource_list`, `djresource_detail`, etc.) et les
+templates fournis s'adaptent automatiquement au `lookup_field` choisi —
+rien d'autre à changer.
 
-- **Permissions protégées partout** : les permissions déclarées dans
-  `get_permissions()` (ex. `LoginRequiredMixin`) protègent les pages pleine
-  page **ET** les composants injectés par les balises `djresource_*`. Un
-  visiteur anonyme ne peut pas lire les données d'une Resource protégée via
-  une page publique.
-- **Anti-mass assignment** : `fields = "__all__"` (défaut) expose tous les
-  champs du modèle dans le formulaire. La bibliothèque émet un
-  `FieldsAllWarning` à l'instanciation pour vous pousser à déclarer
-  explicitement les champs modifiables :
-  ```python
-  class ProduitResource(Resource):
-      model = Produit
-      fields = ["nom", "prix", "stock"]   # uniquement ces champs
-  ```
+## Relations (ForeignKey, OneToOneField, ManyToManyField)
 
-## 🧩 Injecter le CRUD dans VOS propres pages
+Django gère les relations **nativement** dans le formulaire généré, sans
+rien à configurer de plus : il suffit de lister le champ dans `fields`.
 
-Vous avez déjà codé votre site (navbar, CSS, mise en page) ? Plutôt que
-d'hériter des pages pleine page de la bibliothèque, injectez **uniquement le
-composant** (tableau, formulaire, détail) au milieu de vos templates :
+```python
+class Produit(models.Model):
+    categorie = models.ForeignKey(Categorie, on_delete=models.CASCADE)   # un-à-plusieurs
+    fournisseur = models.OneToOneField(Fournisseur, on_delete=models.CASCADE)  # un-à-un
+    tags = models.ManyToManyField(Tag, blank=True)                       # plusieurs-à-plusieurs
+
+class ProduitResource(Resource):
+    model = Produit
+    fields = ["nom", "categorie", "fournisseur", "tags"]
+    list_display = ["nom", "categorie", "tags"]
+```
+
+- **ForeignKey / OneToOneField** : devient une liste déroulante (`<select>`)
+  proposant les objets liés, affichés via leur `__str__` — comportement
+  Django standard.
+- **ManyToManyField** : devient une liste à sélection multiple. Pour un
+  widget plus agréable (cases à cocher, champ à tags...), passez par le
+  Niveau 3 (`{% djresource_form_data %}`) et construisez le rendu du champ
+  vous-même — le champ Django (`form.tags`) reste disponible tel quel.
+- **Affichage en liste/détail** : `list_display` et la fiche détail
+  affichent automatiquement une FK via son `__str__`, et un M2M (ou une
+  relation inversée) sous forme de liste lisible séparée par des virgules
+  (ex: `Électronique, Promo`).
+- **Performance** : ajoutez les FK à `select_related` et les M2M /
+  relations inversées à `prefetch_related` pour éviter les requêtes N+1
+  quand elles apparaissent dans `list_display` :
+
+```python
+class ProduitResource(Resource):
+    model = Produit
+    list_display = ["nom", "categorie", "tags"]
+    select_related = ["categorie", "fournisseur"]
+    prefetch_related = ["tags"]
+```
+
+## Champs fichier / image (FileField, ImageField)
+
+Pour un `ImageField`, installez Pillow (`pip install Pillow`) et
+configurez `MEDIA_URL`/`MEDIA_ROOT` dans `settings.py` :
+
+```python
+# settings.py
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+```
+
+```python
+# urls.py, uniquement pour le développement (DEBUG=True)
+from django.conf import settings
+from django.conf.urls.static import static
+
+urlpatterns = [...]
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+```
+
+**Piège fréquent (déjà corrigé dans le framework) :** un formulaire HTML
+qui contient un champ fichier doit avoir `enctype="multipart/form-data"`
+sur la balise `<form>`, sinon le navigateur n'envoie jamais le fichier —
+Django reçoit `request.FILES` vide et affiche "This field is required."
+même si un fichier a bien été sélectionné (souvent sans autre erreur
+visible : la requête répond 200, c'est juste le formulaire invalide qui se
+réaffiche). Tous les templates de formulaire du framework (`form.html`,
+`form_partial.html`, dans les 3 thèmes) l'ont désormais.
+
+## Personnaliser le formulaire généré (n'importe quel framework CSS)
+
+Indépendamment du thème, contrôle total champ par champ :
+
+```python
+class ProduitResource(Resource):
+    model = Produit
+    widget_classes = {
+        "nom": "input input-bordered w-full",   # ex : classes DaisyUI
+        "prix": "input input-bordered w-full",
+    }
+    widget_attrs = {
+        "nom": {"data-testid": "champ-nom", "maxlength": "100"},
+    }
+```
+
+`widget_classes` prend le pas sur `auto_form_css`/`theme` pour les champs
+listés (les autres gardent le style du thème). `widget_attrs` ajoute
+n'importe quel attribut HTML (data-*, aria-*, maxlength...) sans toucher
+aux classes CSS. Pour désactiver complètement l'injection automatique :
+
+```python
+class ProduitResource(Resource):
+    model = Produit
+    auto_form_css = False
+```
+
+## Ajouter des informations métier dans les pages du framework
+
+Pour l'autre sens — ajouter une info dans une page générée par djresource
+plutôt que le contraire :
+
+**`get_extra_context()`** : injecté automatiquement dans toutes les vues générées.
+
+```python
+class ProduitResource(Resource):
+    model = Produit
+    def get_extra_context(self, view):
+        return {"valeur_stock_total": ...}
+```
+
+**Blocks de template** : `list_top`, `list_bottom`, `list_header_actions`,
+`form_top`, `form_bottom`, `detail_extra`, disponibles dans les pages
+complètes de chaque thème.
 
 ```html
-{% load djresource_tags %}
-
-<h1>Mes produits</h1>
-{% djresource_list "produits.resources.ProduitResource" %}
+{% extends "djresource/list.html" %}
+{% block list_top %}
+<div class="alert alert-info">Stock total : {{ valeur_stock_total }} FCFA</div>
+{% endblock %}
 ```
 
-| Balise | Rend |
+## ⚠️ Sécurité — à lire avant tout déploiement
+
+1. **Aucune permission par défaut.** `get_permissions()` retourne `[]` :
+   toutes les vues générées sont accessibles sans authentification tant
+   que vous ne les protégez pas explicitement.
+
+   ```python
+   from django.contrib.auth.mixins import LoginRequiredMixin
+
+   class ProduitResource(Resource):
+       model = Produit
+       def get_permissions(self):
+           return [LoginRequiredMixin]
+   ```
+
+2. **Pas de filtrage par propriétaire en V1 (risque IDOR).** Même
+   connecté, un utilisateur peut voir/modifier n'importe quel objet du
+   modèle, sauf si vous filtrez vous-même `get_base_queryset()` selon
+   l'utilisateur courant.
+
+3. **`fields = "__all__"` expose tous les champs du modèle** dans le
+   formulaire généré. Listez toujours explicitement les champs autorisés
+   en écriture pour un modèle contenant des champs sensibles.
+
+4. **Les balises `djresource_*` importent dynamiquement** (`import_string`)
+   le chemin passé en argument. Ce chemin doit **toujours** être une
+   chaîne codée en dur dans le template, jamais construite depuis une
+   donnée utilisateur. Le framework vérifie que la classe résolue hérite
+   bien de `Resource`, mais cela ne protège pas contre un chemin
+   dynamique malveillant.
+
+5. **Déjà couvert, pour info :**
+   - Recherche (`?q=`) : passe par l'ORM (`Q(...)`), paramétrée.
+   - Tri (`?sort=`) : vérifié contre une liste blanche (`ordering_fields`).
+   - `readonly_fields` : Django ignore la valeur POST soumise pour un
+     champ désactivé.
+   - `pk` inexistant : renvoie une 404 propre (`get_object_or_404`).
+   - CSRF : `{% csrf_token %}` présent dans tous les formulaires, y
+     compris les templates partiels.
+
+6. **Projet de démo (`demo/`) : ne pas utiliser tel quel en production**
+   (`SECRET_KEY` codée en dur, `DEBUG = True`, `ALLOWED_HOSTS = ["*"]`).
+
+## Options de configuration disponibles (V1)
+
+| Attribut | Rôle |
 |---|---|
-| `{% djresource_list "app.resources.MaResource" %}` | Tableau (recherche, tri, pagination) |
-| `{% djresource_form "app.resources.MaResource" %}` | Formulaire de création |
-| `{% djresource_form "app.resources.MaResource" objet.slug %}` | Formulaire de modification |
-| `{% djresource_detail "app.resources.MaResource" objet.slug %}` | Détail d'un objet |
+| `model` | Modèle Django (obligatoire) |
+| `fields` | Champs du formulaire (`"__all__"` par défaut — voir Sécurité §3) |
+| `readonly_fields` | Champs affichés mais non modifiables |
+| `list_display` | Colonnes affichées dans la liste |
+| `search_fields` | Champs concernés par la recherche texte |
+| `ordering_fields` | Champs sur lesquels le tri par clic est autorisé |
+| `paginate_by` | Nombre d'objets par page (défaut : 20) |
+| `select_related` / `prefetch_related` | Optimisation des requêtes sur les relations |
+| `lookup_field` | Champ utilisé pour identifier l'objet dans les URLs (`"pk"` par défaut — voir section dédiée) |
+| `theme` | `"bootstrap"` (défaut) \| `"tailwind"` \| `"plain"` \| thème custom |
+| `auto_form_css` | Injection auto des classes CSS du thème sur le formulaire |
+| `widget_classes` / `widget_attrs` | Classes CSS et attributs HTML par champ, indépendants du thème |
+| `template_list/detail/form/delete` | Surcharge d'un template précis |
+| `get_extra_context(view)` | Injecte des données métier dans le contexte de toutes les vues |
+| `get_list_context/get_form_context/get_detail_context` | Contexte calculé hors vue (affichage 100% custom) |
+| `get_permissions()` | À surcharger pour restreindre l'accès — voir Sécurité §1 |
 
-> Le 2ᵉ argument des balises `djresource_form` / `djresource_detail` est la
-> valeur du champ `lookup_field` de la Resource : `objet.pk` (par défaut),
-> `objet.slug`, `objet.uid`… selon votre configuration.
+## Balises de template disponibles (`{% load djresource_tags %}`)
 
-Le partiel rendu (`*_partial.html`, décliné par thème) ne contient ni
-`<html>`, ni navbar : uniquement le composant, avec les classes du thème de
-votre `Resource`. Recherche, tri et pagination fonctionnent via les paramètres
-GET de votre page (`?q=`, `?sort=`, `?page=`), sans route supplémentaire.
+| Balise | Rend du HTML ? | Usage |
+|---|---|---|
+| `djresource_list "chemin.Resource"` | Oui (thème choisi) | Injecter le composant liste tout fait |
+| `djresource_form "chemin.Resource" [lookup]` | Oui | Injecter le composant formulaire tout fait |
+| `djresource_detail "chemin.Resource" lookup` | Oui | Injecter le composant détail tout fait |
+| `djresource_list_data "chemin.Resource" as v` | Non | Données brutes de la liste, affichage 100% libre |
+| `djresource_form_data "chemin.Resource" [lookup] as v` | Non | Données brutes du formulaire |
+| `djresource_detail_data "chemin.Resource" lookup as v` | Non | Données brutes du détail |
 
-Pour configurer le composant : passez des `cle=valeur` (fusionnées dans le
-contexte du partiel) ou surchargez le partiel via `template=...` ou en
-étendant son template et en remplissant ses blocks (`list_top`, `list_bottom`,
-`form_top`, `form_bottom`, `detail_extra`). Toutes les données de la vue
-correspondante sont disponibles dans le partiel : `resource`, `verbose_name`,
-les URL nommées (`url_list`, `url_create`, `url_update`, `url_delete`),
-`object_list`, `page_obj`, `list_display` et le résultat de
-`get_extra_context()`. Voir l'exemple complet
-`demo/produits/templates/produits/boutique.html` (page "boutique" 100 %
-personnalisée avec tableau + formulaire + fiche produit injectés).
+`lookup` est la valeur du `lookup_field` de la ressource — `produit.pk`
+dans le cas par défaut, ou par ex. `produit.slug` si `lookup_field = "slug"`.
 
-## 📚 Documentation complète
-
-La documentation complète est disponible sur **[nockiprogramtech.github.io/djresource](https://nockiprogramtech.github.io/djresource/)** :
-
-- [Guide d'installation](https://nockiprogramtech.github.io/djresource/guide/installation/)
-- [Démarrage rapide](https://nockiprogramtech.github.io/djresource/guide/quickstart/)
-- [Thèmes](https://nockiprogramtech.github.io/djresource/guide/themes/)
-- [Personnalisation](https://nockiprogramtech.github.io/djresource/guide/customization/)
-- [Fonctionnalités avancées](https://nockiprogramtech.github.io/djresource/guide/advanced/)
-- [Référence API](https://nockiprogramtech.github.io/djresource/api/resource/)
-
-## 🧪 Lancer les tests
+## Lancer le projet de démonstration (celui déjà fourni, produits/boutique)
 
 ```bash
-pip install -e ".[test]"
-python runtests.py
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+pip install -r requirements.txt
+
+cd demo
+python manage.py makemigrations produits
+python manage.py migrate
+python manage.py runserver
 ```
 
-## 🤝 Contribuer
+- `http://127.0.0.1:8000/produits/` — CRUD généré (thème par défaut).
+- `http://127.0.0.1:8000/dashboard/` — page custom avec le composant tout fait injecté.
+- `http://127.0.0.1:8000/boutique/` — page e-commerce en cartes, données brutes, CSS maison.
+- `http://127.0.0.1:8000/boutique/<pk>/` — fiche produit avec meta tags SEO + info statique.
 
-Les contributions sont les bienvenues ! Consultez le [guide de contribution](https://nockiprogramtech.github.io/djresource/contributing/) et le [journal des modifications](https://nockiprogramtech.github.io/djresource/changelog/).
+## Lancer les tests
 
-## 📄 Licence
+```bash
+cd demo
+python manage.py test
+```
 
-Distribué sous la [licence MIT](https://github.com/NockiProgramTECH/djresource/blob/main/LICENSE).
+## Feuille de route (V2, non implémentée dans cette version)
 
----
-
-<p align="center">
-  Fait avec ❤️ par <a href="https://github.com/NockiProgramTECH">Enock Lankonadé</a>
-</p>
+Permissions granulaires, filtrage par propriétaire, actions en masse,
+export CSV, soft delete, inlines, autocomplete sur les relations, audit
+log, ressources imbriquées. Voir le cahier des charges du projet.

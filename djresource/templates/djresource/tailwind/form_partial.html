@@ -1,7 +1,7 @@
-{% load djresource_tags %}
-{% block form_top %}{% endblock %}
-
-<form method="post" novalidate action="{% if object %}{% url url_update object|get_attr:resource.lookup_field %}{% else %}{% url url_create %}{% endif %}" {% if form.is_multipart %}enctype="multipart/form-data"{% endif %} class="bg-white rounded shadow p-6 max-w-xl">
+{# djresource/tailwind/form_partial.html — voir djresource/form_partial.html
+   pour l'explication sur enctype="multipart/form-data" (obligatoire pour
+   les FileField/ImageField) et form_action_url. #}
+<form method="post" action="{{ form_action_url }}" enctype="multipart/form-data" novalidate class="bg-white rounded shadow p-6 max-w-xl">
     {% csrf_token %}
 
     {% if form.non_field_errors %}
@@ -18,7 +18,5 @@
     {% endfor %}
 
     <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Enregistrer</button>
-    <a href="{% url url_list %}" class="ml-2 text-gray-600 hover:underline">Annuler</a>
+    {% if url_list %}<a href="{% url url_list %}" class="ml-2 text-gray-600 hover:underline">Annuler</a>{% endif %}
 </form>
-
-{% block form_bottom %}{% endblock %}

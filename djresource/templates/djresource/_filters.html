@@ -1,0 +1,19 @@
+{% if filters_enabled %}
+<form method="get" class="row g-2 mb-3 align-items-center">
+    {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+    {% if current_sort %}<input type="hidden" name="sort" value="{{ current_sort }}">{% endif %}
+    <input type="hidden" name="dir" value="{{ current_dir }}">
+    {% for filt in list_filters %}
+    <div class="col-auto">
+        <select name="{{ filt.field }}" class="form-select form-select-sm">
+            {% for opt in filt.options %}
+            <option value="{{ opt.value }}"{% if opt.selected %} selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endfor %}
+    <div class="col-auto">
+        <button type="submit" class="btn btn-outline-secondary btn-sm">Filtrer</button>
+    </div>
+</form>
+{% endif %}

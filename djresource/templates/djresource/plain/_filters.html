@@ -1,0 +1,15 @@
+{% if filters_enabled %}
+<form method="get" class="djr-search">
+    {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+    {% if current_sort %}<input type="hidden" name="sort" value="{{ current_sort }}">{% endif %}
+    <input type="hidden" name="dir" value="{{ current_dir }}">
+    {% for filt in list_filters %}
+    <select name="{{ filt.field }}" class="djr-input">
+        {% for opt in filt.options %}
+        <option value="{{ opt.value }}"{% if opt.selected %} selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+    </select>
+    {% endfor %}
+    <button type="submit" class="djr-btn djr-btn--secondary">Filtrer</button>
+</form>
+{% endif %}

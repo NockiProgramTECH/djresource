@@ -2,16 +2,23 @@
 djresource.templatetags.djresource_tags
 ========================================
 
-Filtres et balises de template de la bibliothèque.
+Filtres et balises de template du framework.
 
-Les balises `djresource_list`, `djresource_form`, `djresource_detail`
-permettent d'injecter un composant CRUD (tableau de liste, formulaire,
-détail) directement dans N'IMPORTE QUEL template — y compris une page
-que vous avez déjà codée vous-même, avec votre propre structure autour.
-Elles ne rendent QUE le composant (pas de <html>, pas de navbar) : les
-données injectées restent les vôtres à mettre en page comme vous voulez.
+Deux familles de balises :
+
+1. `djresource_list` / `djresource_form` / `djresource_detail` : rendent
+   un composant HTML tout fait (thème choisi) directement dans votre page.
+
+2. `djresource_list_data` / `djresource_form_data` / `djresource_detail_data` :
+   ne rendent AUCUN HTML — elles renvoient les données brutes via
+   `{% ... as variable %}`, pour un affichage 100% libre.
+
+SÉCURITÉ : `resource_path` doit TOUJOURS être une chaîne codée en dur
+dans votre template, jamais une valeur construite depuis une donnée
+utilisateur (GET/POST/session) — voir docstring de `_resolve_resource`.
 """
 from django import template
+from django.core.exceptions import ImproperlyConfigured
 from django.template.loader import render_to_string
 from django.utils.module_loading import import_string
 from django.utils.safestring import mark_safe
@@ -20,17 +27,30 @@ register = template.Library()
 
 
 # ---------------------------------------------------------------------
-# Filtres (affichage de champs dynamiques)
+# Filtres (affichage de champs dynamiques, y compris les relations)
 # ---------------------------------------------------------------------
+def _is_related_manager(value):
+    """Détecte un manager de relation (ManyToMany, ou ForeignKey inversée)."""
+    return hasattr(value, "all") and callable(getattr(value, "all", None))
+
+
 @register.filter(name="get_attr")
 def get_attr(obj, attr_name):
     """
-    Retourne la valeur d'un attribut/champ dynamique d'un objet.
+    Retourne la valeur d'un attribut/champ dynamique d'un objet, prête à
+    afficher — y compris pour une relation :
+    - ForeignKey / OneToOneField : affiche str(objet lié) (comportement
+      normal de Django, rien de spécial à faire ici).
+    - ManyToManyField ou relation inversée (FK depuis un autre modèle) :
+      affiche la liste des objets liés, séparés par des virgules.
 
     Usage dans un template : {{ object|get_attr:field }}
-    où `field` est une chaîne (ex: "nom", "prix") venant de `list_display`.
+    où `field` est une chaîne (ex: "nom", "categorie", "tags") venant de
+    `list_display`.
     """
     value = getattr(obj, attr_name, "")
+    if _is_related_manager(value):
+        return ", ".join(str(item) for item in value.all()) or "—"
     if callable(value):
         value = value()
     return value
@@ -43,8 +63,12 @@ def get_fields_display(obj):
     modèle, utilisée par le template de détail pour afficher tous les
     champs sans connaître leurs noms à l'avance.
 
-    Gère aussi les champs à choix (`choices=...`) en affichant le libellé
-    via get_<field>_display() plutôt que la valeur brute stockée en base.
+    Couvre :
+    - les champs concrets (y compris ForeignKey/OneToOneField, affichés
+      via leur __str__ automatiquement),
+    - les champs à choix (`choices=...`), affichés via get_<field>_display(),
+    - les champs ManyToManyField (absents de `_meta.fields` en Django,
+      donc traités séparément), affichés en liste séparée par des virgules.
     """
     result = []
     for f in obj._meta.fields:
@@ -53,87 +77,157 @@ def get_fields_display(obj):
         if hasattr(obj, display_method_name):
             value = getattr(obj, display_method_name)()
         result.append({"label": f.verbose_name, "value": value})
+
+    for f in obj._meta.many_to_many:
+        related_objects = getattr(obj, f.name).all()
+        value = ", ".join(str(item) for item in related_objects) if related_objects else "—"
+        result.append({"label": f.verbose_name, "value": value})
+
     return result
 
 
 # ---------------------------------------------------------------------
-# Balises d'injection de composants CRUD dans une page personnalisée
+# Résolution sécurisée d'une Resource depuis un chemin Python
 # ---------------------------------------------------------------------
 def _resolve_resource(resource_path):
-    """Importe et instancie une Resource à partir de son chemin Python complet."""
-    resource_class = import_string(resource_path)
+    """
+    Importe et instancie une Resource à partir de son chemin Python complet.
+
+    SÉCURITÉ : `resource_path` doit toujours être une chaîne codée en dur
+    dans votre template (ex: "produits.resources.ProduitResource"), jamais
+    une valeur construite depuis une donnée utilisateur — un chemin
+    contrôlé par l'utilisateur permettrait d'importer et d'instancier
+    n'importe quelle classe Python accessible dans le projet. Une
+    vérification (`issubclass(..., Resource)`) empêche d'utiliser une
+    classe qui n'est pas une Resource, mais ne protège pas contre un
+    chemin dynamique malveillant.
+    """
+    from ..resource import Resource  # import différé : évite un import circulaire (remonte au package parent djresource, PAS djresource.templatetags)
+
+    try:
+        resource_class = import_string(resource_path)
+    except ImportError as exc:
+        raise ImproperlyConfigured(
+            f"djresource : impossible d'importer '{resource_path}'. "
+            "Vérifiez le chemin (format 'module.sous_module.NomDeClasse')."
+        ) from exc
+
+    if not (isinstance(resource_class, type) and issubclass(resource_class, Resource)):
+        raise ImproperlyConfigured(
+            f"djresource : '{resource_path}' n'est pas une sous-classe de "
+            "djresource.resource.Resource."
+        )
     return resource_class()
 
 
+# ---------------------------------------------------------------------
+# Balises "composant rendu" (HTML tout fait, thème choisi)
+# ---------------------------------------------------------------------
 @register.simple_tag(takes_context=True)
-def djresource_list(context, resource_path, template=None, **kwargs):
+def djresource_list(context, resource_path):
     """
-    Injecte le composant "liste" (recherche + tri + pagination) d'une
-    Resource directement dans le template courant.
+    Injecte le composant "liste" (tableau, thème choisi) tout rendu dans
+    le template courant.
 
     Usage :
         {% load djresource_tags %}
         {% djresource_list "produits.resources.ProduitResource" %}
-
-    `resource_path` est le chemin Python complet vers la classe Resource
-    ("<module>.<Classe>"). Nécessite que le context processor
-    "django.template.context_processors.request" soit activé (c'est le
-    cas par défaut dans un projet Django standard).
-
-    Options :
-    - `template="monapp/_liste.html"` : surcharge le template partiel
-      utilisé (sinon le partiel du thème de la Resource).
-    - `cle=valeur` : données supplémentaires fusionnées dans le contexte
-      du partiel (ex: `{% djresource_list "..." mon_message="coucou" %}`).
     """
     request = context.get("request")
     resource = _resolve_resource(resource_path)
     list_context = resource.get_list_context(request)
-    list_context.update(kwargs)
-    template_name = template or resource._theme_template("list_partial", None)
+    template_name = resource._theme_template("list_partial", None)
     return mark_safe(render_to_string(template_name, list_context, request=request))
 
 
 @register.simple_tag(takes_context=True)
-def djresource_form(context, resource_path, lookup=None, template=None, **kwargs):
+def djresource_form(context, resource_path, lookup=None):
     """
-    Injecte le composant "formulaire" (création si `lookup` est omis,
-    modification sinon) d'une Resource dans le template courant. Le
-    formulaire soumet directement vers l'URL générée par la bibliothèque
-    (création/modification), la page englobante n'a rien à gérer.
+    Injecte le composant "formulaire" tout rendu (création si `lookup`
+    omis, modification sinon) dans le template courant.
+
+    `lookup` est la valeur du `lookup_field` de la Resource ("pk" par
+    défaut, donc `produit.pk` dans le cas courant — ou `produit.slug` si
+    la Resource définit `lookup_field = "slug"`, etc.)
 
     Usage :
         {% djresource_form "produits.resources.ProduitResource" %}
-        {% djresource_form "produits.resources.ProduitResource" produit.slug %}
-
-    `lookup` est la valeur du champ de lookup de la Resource
-    (`resource.lookup_field`, par défaut le pk) : produit.pk, produit.slug,
-    produit.uid... Mêmes options que `djresource_list` (`template=`,
-    `cle=valeur`).
+        {% djresource_form "produits.resources.ProduitResource" produit.pk %}
     """
     request = context.get("request")
     resource = _resolve_resource(resource_path)
-    form_context = resource.get_form_context(request, lookup_value=lookup)
-    form_context.update(kwargs)
-    template_name = template or resource._theme_template("form_partial", None)
+    form_context = resource.get_form_context(request, lookup=lookup)
+    template_name = resource._theme_template("form_partial", None)
     return mark_safe(render_to_string(template_name, form_context, request=request))
 
 
 @register.simple_tag(takes_context=True)
-def djresource_detail(context, resource_path, lookup, template=None, **kwargs):
+def djresource_detail(context, resource_path, lookup):
     """
-    Injecte le composant "détail" d'un objet précis dans le template courant.
+    Injecte le composant "détail" tout rendu d'un objet précis dans le
+    template courant. `lookup` = valeur du `lookup_field` de la Resource.
 
     Usage :
-        {% djresource_detail "produits.resources.ProduitResource" produit.slug %}
-
-    `lookup` est la valeur du champ de lookup de la Resource
-    (`resource.lookup_field`, par défaut le pk). Mêmes options que
-    `djresource_list` (`template=`, `cle=valeur`).
+        {% djresource_detail "produits.resources.ProduitResource" produit.pk %}
     """
     request = context.get("request")
     resource = _resolve_resource(resource_path)
     detail_context = resource.get_detail_context(request, lookup)
-    detail_context.update(kwargs)
-    template_name = template or resource._theme_template("detail_partial", None)
+    template_name = resource._theme_template("detail_partial", None)
     return mark_safe(render_to_string(template_name, detail_context, request=request))
+
+
+# ---------------------------------------------------------------------
+# Balises "données brutes" (aucun HTML — affichage 100% libre)
+# ---------------------------------------------------------------------
+@register.simple_tag(takes_context=True)
+def djresource_list_data(context, resource_path):
+    """
+    Calcule les données de la liste SANS rendre aucun HTML. À utiliser
+    avec `as` pour construire votre propre affichage (cartes, grille...).
+
+    Usage :
+        {% djresource_list_data "produits.resources.ProduitResource" as produits %}
+        {% for produit in produits.object_list %}
+          <a href="{% url produits.url_detail produit.pk %}">{{ produit.nom }}</a>
+        {% endfor %}
+
+    Note : utilisez `produit.pk` (ou l'attribut correspondant à
+    `lookup_field` si vous l'avez personnalisé) dans les URLs, pas un
+    identifiant arbitraire.
+    """
+    request = context.get("request")
+    resource = _resolve_resource(resource_path)
+    return resource.get_list_context(request)
+
+
+@register.simple_tag(takes_context=True)
+def djresource_form_data(context, resource_path, lookup=None):
+    """
+    Comme `djresource_list_data`, pour un formulaire (création si `lookup`
+    omis, modification sinon).
+
+    Usage :
+        {% djresource_form_data "produits.resources.ProduitResource" as f %}
+        <form method="post" action="{{ f.form_action_url }}" enctype="multipart/form-data">
+          {% csrf_token %}
+          {% for field in f.form %}...{% endfor %}
+        </form>
+    """
+    request = context.get("request")
+    resource = _resolve_resource(resource_path)
+    return resource.get_form_context(request, lookup=lookup)
+
+
+@register.simple_tag(takes_context=True)
+def djresource_detail_data(context, resource_path, lookup):
+    """
+    Comme `djresource_list_data`, pour le détail d'un objet précis.
+
+    Usage :
+        {% djresource_detail_data "produits.resources.ProduitResource" produit_id as d %}
+        <h1>{{ d.object.nom }}</h1>
+    """
+    request = context.get("request")
+    resource = _resolve_resource(resource_path)
+    return resource.get_detail_context(request, lookup)

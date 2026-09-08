@@ -4,15 +4,9 @@
 {% block title %}{{ verbose_name|capfirst }} — Détail{% endblock %}
 
 {% block content %}
-<h1>{{ verbose_name|capfirst }} #{{ object|get_attr:resource.lookup_field }}</h1>
+<h1>{{ verbose_name|capfirst }} #{{ object.pk }}</h1>
 
-<table class="djr-detail">
-    <tbody>
-    {% for field in object|get_fields_display %}
-    <tr><th>{{ field.label|capfirst }}</th><td>{{ field.value }}</td></tr>
-    {% endfor %}
-    </tbody>
-</table>
+{% include "djresource/plain/detail_partial.html" %}
 
 {% block detail_extra %}{% endblock %}
 

@@ -20,10 +20,22 @@ class Produit(models.Model):
 
 
 class Article(models.Model):
-    """Modèle de test pour le lookup par slug (champ unique)."""
+    """Modèle de test pour le lookup par slug et les filtres de liste."""
+
+    ETAT_BROUILLON = "brouillon"
+    ETAT_PUBLIE = "publie"
+
+    ETATS = [
+        (ETAT_BROUILLON, "Brouillon"),
+        (ETAT_PUBLIE, "Publié"),
+    ]
 
     titre = models.CharField("Titre", max_length=100)
     slug = models.SlugField("Slug", max_length=100, unique=True)
+    actif = models.BooleanField("Actif", default=True)
+    etat = models.CharField(
+        "État", max_length=20, choices=ETATS, default=ETAT_PUBLIE
+    )
 
     class Meta:
         verbose_name = "article"

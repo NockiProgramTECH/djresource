@@ -137,6 +137,57 @@ class PartialPermissionsTests(TestCase):
         self.assertIn("form", context)
 
 
+class ArticleFilterTests(TestCase):
+    """
+    Valide `list_filter` : filtrage de la liste par `?<champ>=<valeur>`,
+    restreint aux champs déclarés (booléen et champ à `choices` ici).
+    """
+
+    def setUp(self):
+        self.actif = Article.objects.create(
+            titre="Riz local", slug="riz-local", actif=True,
+            etat=Article.ETAT_PUBLIE,
+        )
+        self.brouillon = Article.objects.create(
+            titre="Savon", slug="savon", actif=False,
+            etat=Article.ETAT_BROUILLON,
+        )
+
+    def test_liste_affiche_tous_sans_filtre(self):
+        response = self.client.get(reverse("article_list"))
+        self.assertContains(response, "Riz local")
+        self.assertContains(response, "Savon")
+
+    def test_filtre_boolean_oui(self):
+        response = self.client.get(reverse("article_list"), {"actif": "1"})
+        self.assertContains(response, "Riz local")
+        self.assertNotContains(response, "Savon")
+
+    def test_filtre_boolean_non(self):
+        response = self.client.get(reverse("article_list"), {"actif": "0"})
+        self.assertNotContains(response, "Riz local")
+        self.assertContains(response, "Savon")
+
+    def test_filtre_choices(self):
+        response = self.client.get(
+            reverse("article_list"), {"etat": Article.ETAT_BROUILLON}
+        )
+        self.assertNotContains(response, "Riz local")
+        self.assertContains(response, "Savon")
+
+    def test_select_de_filtre_present(self):
+        # Le template de liste expose un <select> par champ de list_filter.
+        response = self.client.get(reverse("article_list"))
+        self.assertContains(response, 'name="actif"')
+        self.assertContains(response, 'name="etat"')
+
+    def test_combinaison_recherche_et_filtre(self):
+        # q et un filtre actif se cumulent.
+        response = self.client.get(reverse("article_list"), {"q": "riz", "actif": "1"})
+        self.assertContains(response, "Riz local")
+        self.assertNotContains(response, "Savon")
+
+
 class ProduitCrudTests(TestCase):
     def setUp(self):
         self.produit = Produit.objects.create(nom="Riz local", prix=15000, stock=50)

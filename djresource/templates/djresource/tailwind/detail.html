@@ -4,18 +4,9 @@
 {% block title %}{{ verbose_name|capfirst }} — Détail{% endblock %}
 
 {% block content %}
-<h1 class="text-2xl font-bold mb-4">{{ verbose_name|capfirst }} #{{ object|get_attr:resource.lookup_field }}</h1>
+<h1 class="text-2xl font-bold mb-4">{{ verbose_name|capfirst }} #{{ object.pk }}</h1>
 
-<table class="min-w-full bg-white rounded shadow divide-y divide-gray-100">
-    <tbody>
-    {% for field in object|get_fields_display %}
-    <tr>
-        <th class="px-4 py-2 text-left text-sm font-medium text-gray-500 w-1/3">{{ field.label|capfirst }}</th>
-        <td class="px-4 py-2 text-sm text-gray-800">{{ field.value }}</td>
-    </tr>
-    {% endfor %}
-    </tbody>
-</table>
+{% include "djresource/tailwind/detail_partial.html" %}
 
 {% block detail_extra %}{% endblock %}
 
