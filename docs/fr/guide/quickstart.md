@@ -1,81 +1,156 @@
-# Démarrage rapide
+# Tutoriel depuis zéro
 
-Ce guide vous montre comment obtenir un CRUD complet pour un modèle Django en
-quelques minutes.
+Ce tutoriel crée une petite application de bibliothèque sécurisée depuis un
+répertoire vide. Il nécessite Python 3.9+ et Django 4.2+.
 
-## 1. Créer votre modèle
-
-```python
-# produits/models.py
-from django.db import models
-
-class Produit(models.Model):
-    nom = models.CharField("Nom", max_length=100)
-    prix = models.DecimalField("Prix (FCFA)", max_digits=10, decimal_places=0)
-    stock = models.PositiveIntegerField("Stock", default=0)
-    actif = models.BooleanField("Actif", default=True)
-```
-
-Puis générez les migrations :
+## 1. Créer le projet
 
 ```bash
-python manage.py makemigrations produits
-python manage.py migrate
+mkdir ma-bibliotheque
+cd ma-bibliotheque
+python -m venv .venv
+# Windows :
+.venv\Scripts\activate
+# macOS/Linux :
+source .venv/bin/activate
+python -m pip install Django djresource
+django-admin startproject config .
+python manage.py startapp livres
 ```
 
-## 2. Déclarer une ressource
-
-Créez un fichier `resources.py` dans votre application, et héritez de
-`Resource` :
+Ajoutez les deux applications dans `config/settings.py` :
 
 ```python
-# produits/resources.py
-from djresource.resource import Resource
-from .models import Produit
-
-class ProduitResource(Resource):
-    model = Produit
-    fields = ["nom", "prix", "stock", "actif"]
-    list_display = ["nom", "prix", "stock", "actif"]
-    search_fields = ["nom"]
-    ordering_fields = ["nom", "prix", "stock"]
-```
-
-## 3. Brancher les routes
-
-```python
-# urls.py (racine du projet)
-from django.urls import include, path
-from produits.resources import ProduitResource
-
-urlpatterns = [
-    path("produits/", include(ProduitResource().urls())),
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "djresource",
+    "livres",
 ]
 ```
 
-## 4. Tester
+Conservez le middleware d'authentification Django et le context processor de
+requête. Les CRUD générés par DjResource sont protégés par défaut.
 
-Lancez le serveur :
+## 2. Créer le modèle
+
+```python
+# livres/models.py
+from django.conf import settings
+from django.db import models
+
+
+class Livre(models.Model):
+    titre = models.CharField(max_length=200)
+    auteur = models.CharField(max_length=150)
+    annee_publication = models.PositiveIntegerField()
+    proprietaire = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="livres",
+    )
+    archive = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.titre
+```
+
+Lancez les migrations :
 
 ```bash
+python manage.py makemigrations
+python manage.py migrate
+```
+
+## 3. Déclarer une Resource sécurisée
+
+Créez `livres/resources.py`. `fields` est une **liste blanche d'écriture** :
+les champs qui n'y figurent pas ne peuvent pas être modifiés par le formulaire
+généré. Le hook `scope_queryset()` empêche un utilisateur d'accéder aux
+objets d'un autre utilisateur.
+
+```python
+# livres/resources.py
+from djresource.resource import Resource
+from .models import Livre
+
+
+class LivreResource(Resource):
+    model = Livre
+    fields = ["titre", "auteur", "annee_publication"]
+    readonly_fields = ["proprietaire", "archive"]
+    list_display = ["titre", "auteur", "annee_publication", "archive"]
+    search_fields = ["titre", "auteur"]
+    ordering_fields = ["titre", "annee_publication"]
+
+    def scope_queryset(self, queryset, request):
+        return queryset.filter(proprietaire=request.user)
+
+    def before_save(self, instance, request, is_new):
+        if is_new:
+            instance.proprietaire = request.user
+```
+
+N'utilisez pas `fields = "__all__"` pour les nouvelles ressources. Cette
+valeur reste disponible uniquement pour compatibilité et émet
+`FieldsAllWarning`.
+
+## 4. Ajouter les URLs
+
+```python
+# config/urls.py
+from django.contrib import admin
+from django.urls import include, path
+from livres.resources import LivreResource
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("livres/", include(LivreResource().urls())),
+]
+```
+
+## 5. Créer un utilisateur et tester le CRUD
+
+```bash
+python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Puis ouvrez **http://127.0.0.1:8000/produits/**.
+Ouvrez `http://127.0.0.1:8000/livres/`. Un visiteur anonyme est redirigé
+vers la page de connexion. Après connexion, les routes générées sont :
 
-## Ce qui a été généré
+| URL | Utilité |
+|---|---|
+| `/livres/` | Liste isolée avec recherche, tri et pagination |
+| `/livres/nouveau/` | Création d'un livre appartenant à l'utilisateur |
+| `/livres/<pk>/` | Détail limité aux livres de l'utilisateur |
+| `/livres/<pk>/modifier/` | Modification limitée aux livres de l'utilisateur |
+| `/livres/<pk>/supprimer/` | Suppression limitée aux livres de l'utilisateur |
 
-| URL | Vue | Noms des routes |
-|---|---|---|
-| `/produits/` | Liste (recherche, tri, pagination) | `produit_list` |
-| `/produits/nouveau/` | Création | `produit_create` |
-| `/produits/<pk>/` | Détail | `produit_detail` |
-| `/produits/<pk>/modifier/` | Modification | `produit_update` |
-| `/produits/<pk>/supprimer/` | Suppression (confirmation) | `produit_delete` |
+Créez un deuxième utilisateur et vérifiez qu'il ne peut ni voir ni modifier
+les livres du premier. Un objet hors périmètre renvoie HTTP 404, y compris
+pour le détail, la modification et la suppression.
 
-!!! tip "Utiliser les noms de routes"
-    Le nom est construit à partir du `model_name` du modèle Django :
-    `produit` → `produit_list`, etc. Utilisez `reverse("produit_list")` ou
-    `{% url "produit_list" %}` dans vos templates.
+## 6. Rendre volontairement une ressource publique
 
-Passons maintenant aux [thèmes](themes.md).
+L'accès public est opt-in et sans ambiguïté :
+
+```python
+class CataloguePublicResource(Resource):
+    model = Livre
+    public = True
+    fields = []
+    list_display = ["titre", "auteur"]
+```
+
+Utilisez ceci uniquement pour des données réellement publiques. `public = True`
+ne désactive ni `scope_queryset()` ni les règles métier supplémentaires que
+vous implémentez.
+
+Consultez ensuite les pages [thèmes](themes.md),
+[personnalisation](customization.md) et
+[fonctionnalités avancées](advanced.md).

@@ -46,7 +46,7 @@ And the equivalent of a single line in `urls.py` to wire up the 5 routes.
 | Customization | Overridable templates, business context, permissions |
 | Component injection | `{% djresource_list %}` etc. tags in any page |
 
-## Get started in 30 seconds
+## Get started securely
 
 ```bash
 pip install djresource
@@ -63,6 +63,12 @@ from .models import Produit
 
 class ProduitResource(Resource):
     model = Produit
+    fields = ["nom", "prix", "stock"]
+    list_display = ["nom", "prix", "stock"]
+    public = False
+
+    def scope_queryset(self, queryset, request):
+        return queryset.filter(owner=request.user)
 ```
 
 ```python
@@ -75,9 +81,13 @@ urlpatterns = [
 ]
 ```
 
-!!! success "Result"
-    `/produits/` (list), `/produits/nouveau/` (creation), `/produits/<pk>/` (detail),
-    `/produits/<pk>/modifier/` (update), `/produits/<pk>/supprimer/` (deletion).
+!!! warning "Security defaults"
+    Generated views require authentication, `fields` is a write allowlist,
+    and object access must be scoped with `scope_queryset()`. Set
+    `public = True` only for intentionally public data.
+
+See the complete [tutorial from zero](guide/quickstart.md) before wiring a
+resource into a production project.
 
 ## Documentation
 

@@ -2,9 +2,9 @@
 
 ## Permissions
 
-Par défaut, les vues générées sont publiques. Restreignez l'accès en
-surchargeant `get_permissions()` : retournez une liste de mixins injectés
-dans le MRO des vues.
+Par défaut, les vues générées exigent une authentification. Définissez
+explicitement `public = True` pour rendre une ressource publique. Vous pouvez
+ajouter des mixins de permission en surchargeant `get_permissions()`.
 
 ```python
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
@@ -18,6 +18,9 @@ class ProduitResource(Resource):
             # PermissionRequiredMixin (nécessite permission_required en attribut)
         ]
 ```
+
+La même chaîne de permissions s'applique aux composants injectés, y compris
+`UserPassesTestMixin` et les mixins de permission métier personnalisés.
 
 !!! important "Les partiels sont protégés aussi"
     Les permissions s'appliquent aux pages pleine page **ET** aux composants
@@ -49,17 +52,20 @@ class CommandeResource(Resource):
 
 ## Filtre commun sur le queryset
 
-Surchargez `get_base_queryset()` pour appliquer un filtre à **toutes** les
-vues (List, Detail, Update, Delete) :
+Surchargez `scope_queryset()` pour isoler les objets selon la requête
+courante. Il s'applique à **toutes** les vues (List, Detail, Update, Delete)
+et aux contextes injectés :
 
 ```python
 class ProduitResource(Resource):
     model = Produit
 
-    def get_base_queryset(self):
-        qs = super().get_base_queryset()
-        return qs.filter(actif=True)
+    def scope_queryset(self, queryset, request):
+        return queryset.filter(owner=request.user)
 ```
+
+`get_base_queryset()` reste le hook du queryset de base du modèle ;
+`get_queryset(request)` retourne le queryset complètement isolé.
 
 ## Changer le champ de lookup des URLs
 

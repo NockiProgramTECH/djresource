@@ -6,19 +6,27 @@ import warnings
 
 from django.contrib.auth.models import AnonymousUser, User
 from django.core.exceptions import PermissionDenied
+from django.http import Http404
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
 from djresource.resource import FieldsAllWarning, Resource
 
 from .models import Article, Produit
-from .resources import ArticleProtegeResource, ArticleResource
+from .resources import (
+    ArticleBusinessProtectedResource,
+    ArticleDefaultProtectedResource,
+    ArticleProtegeResource,
+    ArticleResource,
+    ArticleScopedResource,
+)
 
 
 class ProduitToutChampsResource(Resource):
     """Resource laissée avec le défaut `fields = "__all__"` (à éviter)."""
 
     model = Produit
+    fields = "__all__"
 
 
 class FieldsExplicitesTests(TestCase):
@@ -135,6 +143,80 @@ class PartialPermissionsTests(TestCase):
     def test_formulaire_partiel_autorise_connecte(self):
         context = self.resource.get_form_context(self._request(self.user))
         self.assertIn("form", context)
+
+    def test_permissions_metier_des_partiels_sont_appliquees(self):
+        resource = ArticleBusinessProtectedResource()
+        denied = User.objects.create_user(username="denied", password="pw")
+        with self.assertRaises(PermissionDenied):
+            resource.get_list_context(self._request(denied))
+
+
+class DefaultSecurityTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.article = Article.objects.create(titre="Privé", slug="prive")
+
+    def test_crud_est_protege_par_defaut(self):
+        request = self.factory.get("/")
+        request.user = AnonymousUser()
+        response = ArticleDefaultProtectedResource().get_list_view().as_view()(
+            request
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response.url)
+
+    def test_publicite_est_explicite(self):
+        response = self.client.get(reverse("article_list"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_champs_par_defaut_ne_permettent_pas_le_mass_assignment(self):
+        resource = ArticleDefaultProtectedResource()
+        self.assertEqual(list(resource.get_form_class().base_fields), [])
+
+
+class QuerysetScopeTests(TestCase):
+    def setUp(self):
+        self.alice = User.objects.create_user(username="alice", password="pw")
+        self.bob = User.objects.create_user(username="bob", password="pw")
+        self.alice_article = Article.objects.create(
+            titre="Alice", slug="alice", owner=self.alice
+        )
+        self.bob_article = Article.objects.create(
+            titre="Bob", slug="bob", owner=self.bob
+        )
+        self.resource = ArticleScopedResource()
+
+    def test_liste_et_lookup_sont_isoles_par_utilisateur(self):
+        list_request = RequestFactory().get("/")
+        list_request.user = self.alice
+        response = self.resource.get_list_view().as_view()(list_request)
+        self.assertContains(response, "Alice")
+        self.assertNotContains(response, "Bob")
+        detail_request = RequestFactory().get("/")
+        detail_request.user = self.alice
+        with self.assertRaises(Http404):
+            self.resource.get_detail_view().as_view()(
+                detail_request, slug=self.bob_article.slug
+            )
+
+    def test_update_delete_ne_peuvent_pas_franchir_le_scope(self):
+        update_request = RequestFactory().post(
+            "/", {"titre": "Hijacked", "slug": self.bob_article.slug}
+        )
+        update_request.user = self.alice
+        delete_request = RequestFactory().post("/")
+        delete_request.user = self.alice
+        with self.assertRaises(Http404):
+            self.resource.get_update_view().as_view()(
+                update_request, slug=self.bob_article.slug
+            )
+        with self.assertRaises(Http404):
+            self.resource.get_delete_view().as_view()(
+                delete_request, slug=self.bob_article.slug
+            )
+        self.bob_article.refresh_from_db()
+        self.assertEqual(self.bob_article.titre, "Bob")
+        self.assertTrue(Article.objects.filter(pk=self.bob_article.pk).exists())
 
 
 class ArticleFilterTests(TestCase):

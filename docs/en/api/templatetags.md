@@ -41,6 +41,12 @@ yourself.
     They require the context processor
     `django.template.context_processors.request`.
 
+!!! warning "Permissions and object scope"
+    Component tags use the same authentication and business-permission chain
+    as full generated views. Their object lookups also use
+    `scope_queryset(queryset, request)`; a tag cannot bypass an owner's
+    queryset scope.
+
 ### `djresource_list`
 
 ```django

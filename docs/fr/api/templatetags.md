@@ -41,6 +41,12 @@ page.
     Elles nécessitent le context processor
     `django.template.context_processors.request`.
 
+!!! warning "Permissions et périmètre des objets"
+    Les balises de composants utilisent la même chaîne d'authentification et
+    de permissions métier que les vues générées. Leurs recherches d'objets
+    utilisent aussi `scope_queryset(queryset, request)` ; une balise ne peut
+    pas contourner le périmètre d'un propriétaire.
+
 ### `djresource_list`
 
 ```django

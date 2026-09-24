@@ -20,6 +20,20 @@ class ProduitResource(Resource):
 
 ::: djresource.resource.Resource
 
+## Défauts de sécurité
+
+Les ressources générées exigent une authentification, sauf si
+`public = True` est défini explicitement. La valeur par défaut
+`fields = []` signifie qu'aucun champ du modèle n'est modifiable ; déclarez
+une liste blanche explicite pour chaque formulaire de création/modification.
+L'ancienne valeur `fields = "__all__"` reste compatible mais émet
+`FieldsAllWarning`.
+
+Surchargez `scope_queryset(queryset, request)` pour isoler les propriétaires
+ou les tenants. `get_queryset(request)` applique ce périmètre au queryset de
+base et est utilisé pour la liste, le détail, la modification, la
+suppression et les contextes des composants injectés.
+
 ## Résolution des templates
 
 ::: djresource.resource.Resource._theme_template

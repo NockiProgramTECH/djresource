@@ -62,6 +62,13 @@ class ResourceListContextMixin(ResourceContextMixin):
         return context
 
 
+class ResourceQuerysetMixin:
+    """Builds the request-scoped queryset used by every generated view."""
+
+    def get_queryset(self):
+        return self.resource.get_queryset(getattr(self, "request", None))
+
+
 class ResourceFormActionMixin:
     """
     Computes `form_action_url`, used by the form template to explicitly
@@ -166,7 +173,9 @@ class ResourceFilterMixin:
         context = super().get_context_data(**kwargs)
         params = self.request.GET if getattr(self, "request", None) else {}
         context["filters_enabled"] = bool(self.resource.list_filter)
-        context["list_filters"] = self.resource.get_list_filter_options(params)
+        context["list_filters"] = self.resource.get_list_filter_options(
+            params, getattr(self, "request", None)
+        )
         return context
 
 

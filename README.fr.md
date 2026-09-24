@@ -95,6 +95,7 @@ cas par défaut avec `startproject`, donc normalement rien à faire).
 Ouvre `bibliotheque/models.py` :
 
 ```python
+from django.conf import settings
 from django.db import models
 
 
@@ -102,6 +103,9 @@ class Livre(models.Model):
     titre = models.CharField("Titre", max_length=200)
     auteur = models.CharField("Auteur", max_length=150)
     annee = models.PositiveIntegerField("Année de publication")
+    proprietaire = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE
+    )
     disponible = models.BooleanField("Disponible", default=True)
 
     class Meta:
@@ -124,9 +128,17 @@ from .models import Livre
 class LivreResource(Resource):
     model = Livre
     fields = ["titre", "auteur", "annee", "disponible"]
+    readonly_fields = ["proprietaire"]
     list_display = ["titre", "auteur", "annee", "disponible"]
     search_fields = ["titre", "auteur"]
     ordering_fields = ["titre", "annee"]
+
+    def scope_queryset(self, queryset, request):
+        return queryset.filter(proprietaire=request.user)
+
+    def before_save(self, instance, request, is_new):
+        if is_new:
+            instance.proprietaire = request.user
 ```
 
 ### Étape 8 — Brancher les routes
@@ -159,9 +171,11 @@ Si tout se passe bien, tu verras des lignes `Applying bibliotheque.0001_initial.
 python manage.py runserver
 ```
 
-Ouvre `http://127.0.0.1:8000/livres/` dans ton navigateur. Tu dois voir
-une liste vide avec un bouton "+ Ajouter" (Bootstrap par défaut). Clique
-dessus, crée un livre, reviens à la liste : il doit apparaître.
+Ouvre `http://127.0.0.1:8000/livres/` dans ton navigateur. Tu es redirigé
+vers la connexion tant que tu n'es pas authentifié. Après connexion, crée un
+livre et vérifie que la liste ne contient que les livres de l'utilisateur
+courant. Le [tutoriel sécurisé complet](docs/fr/guide/quickstart.md) est
+également disponible dans la documentation.
 
 **Si ça marche → la bibliothèque est bien intégrée.** Tu peux maintenant
 essayer, dans l'ordre, pour t'entraîner :
@@ -545,27 +559,30 @@ complètes de chaque thème.
 
 ## ⚠️ Sécurité — à lire avant tout déploiement
 
-1. **Aucune permission par défaut.** `get_permissions()` retourne `[]` :
-   toutes les vues générées sont accessibles sans authentification tant
-   que vous ne les protégez pas explicitement.
+1. **Authentification obligatoire par défaut.** Les vues CRUD et les
+   composants injectés exigent un utilisateur connecté. Pour rendre une
+   ressource publique, activez-le explicitement avec `public = True` :
 
    ```python
-   from django.contrib.auth.mixins import LoginRequiredMixin
-
    class ProduitResource(Resource):
        model = Produit
-       def get_permissions(self):
-           return [LoginRequiredMixin]
+       public = True
    ```
 
-2. **Pas de filtrage par propriétaire en V1 (risque IDOR).** Même
-   connecté, un utilisateur peut voir/modifier n'importe quel objet du
-   modèle, sauf si vous filtrez vous-même `get_base_queryset()` selon
-   l'utilisateur courant.
+2. **Isoler tous les accès aux objets.** Surchargez
+   `scope_queryset(queryset, request)` pour isoler les propriétaires/tenants.
+   Le `get_queryset(request)` obtenu est utilisé pour la liste, le détail,
+   la modification, la suppression et les contextes injectés :
 
-3. **`fields = "__all__"` expose tous les champs du modèle** dans le
-   formulaire généré. Listez toujours explicitement les champs autorisés
-   en écriture pour un modèle contenant des champs sensibles.
+   ```python
+   def scope_queryset(self, queryset, request):
+       return queryset.filter(owner=request.user)
+   ```
+
+3. **Écriture interdite par défaut.** `fields = []` est la valeur par défaut.
+   Listez explicitement les champs autorisés en écriture. La valeur historique
+   `fields = "__all__"` reste supportée avec un `FieldsAllWarning` pour
+   compatibilité, mais ne doit pas être utilisée avec des champs sensibles.
 
 4. **Les balises `djresource_*` importent dynamiquement** (`import_string`)
    le chemin passé en argument. Ce chemin doit **toujours** être une
@@ -591,7 +608,7 @@ complètes de chaque thème.
 | Attribut | Rôle |
 |---|---|
 | `model` | Modèle Django (obligatoire) |
-| `fields` | Champs du formulaire (`"__all__"` par défaut — voir Sécurité §3) |
+| `fields` | Liste blanche des champs du formulaire (vide par défaut) |
 | `readonly_fields` | Champs affichés mais non modifiables |
 | `list_display` | Colonnes affichées dans la liste |
 | `search_fields` | Champs concernés par la recherche texte |
@@ -606,7 +623,9 @@ complètes de chaque thème.
 | `template_list/detail/form/delete` | Surcharge d'un template précis |
 | `get_extra_context(view)` | Injecte des données métier dans le contexte de toutes les vues |
 | `get_list_context/get_form_context/get_detail_context` | Contexte calculé hors vue (affichage 100% custom) |
-| `get_permissions()` | À surcharger pour restreindre l'accès — voir Sécurité §1 |
+| `public` | Active explicitement l'accès sans authentification |
+| `get_permissions()` | Mixins de permission supplémentaires (authentification par défaut) |
+| `scope_queryset(queryset, request)` / `get_queryset(request)` | Isolation des objets selon la requête |
 
 ## Balises de template disponibles (`{% load djresource_tags %}`)
 

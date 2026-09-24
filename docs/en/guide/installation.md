@@ -43,6 +43,12 @@ INSTALLED_APPS = [
     default templates provided by the library
     (`djresource/templates/djresource/*.html`).
 
+!!! warning "Secure defaults"
+    Generated resources require authentication unless `public = True` is
+    explicitly declared. Forms use `fields = []` by default, so declare a
+    write allowlist. For user-owned or tenant-owned data, implement
+    `scope_queryset(queryset, request)` before exposing the resource.
+
 ## Verify the installation
 
 ```bash

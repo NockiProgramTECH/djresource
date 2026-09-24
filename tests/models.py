@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 
 class Produit(models.Model):
@@ -31,6 +32,9 @@ class Article(models.Model):
     ]
 
     titre = models.CharField("Titre", max_length=100)
+    owner = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.CASCADE, related_name="test_articles"
+    )
     slug = models.SlugField("Slug", max_length=100, unique=True)
     actif = models.BooleanField("Actif", default=True)
     etat = models.CharField(

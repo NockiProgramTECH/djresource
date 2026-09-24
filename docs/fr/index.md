@@ -46,7 +46,7 @@ Et l'équivalent d'une ligne dans `urls.py` pour brancher les 5 routes.
 | Personnalisation | Templates surchargeables, contexte métier, permissions |
 | Injection de composants | Balises `{% djresource_list %}` etc. dans n'importe quelle page |
 
-## Démarrage en 30 secondes
+## Démarrer de façon sécurisée
 
 ```bash
 pip install djresource
@@ -63,6 +63,12 @@ from .models import Produit
 
 class ProduitResource(Resource):
     model = Produit
+    fields = ["nom", "prix", "stock"]
+    list_display = ["nom", "prix", "stock"]
+    public = False
+
+    def scope_queryset(self, queryset, request):
+        return queryset.filter(proprietaire=request.user)
 ```
 
 ```python
@@ -75,9 +81,14 @@ urlpatterns = [
 ]
 ```
 
-!!! success "Résultat"
-    `/produits/` (liste), `/produits/nouveau/` (création), `/produits/<pk>/` (détail),
-    `/produits/<pk>/modifier/` (modification), `/produits/<pk>/supprimer/` (suppression).
+!!! warning "Défauts de sécurité"
+    Les vues générées exigent une authentification, `fields` est une liste
+    blanche d'écriture et l'accès aux objets doit être isolé avec
+    `scope_queryset()`. Définissez `public = True` uniquement pour des
+    données volontairement publiques.
+
+Consultez le [tutoriel depuis zéro](guide/quickstart.md) avant d'intégrer
+une ressource dans un projet de production.
 
 ## Documentation
 

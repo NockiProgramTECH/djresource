@@ -89,6 +89,7 @@ from .mixins import (
     ResourceListContextMixin,
     ResourceLookupMixin,
     ResourceOrderingMixin,
+    ResourceQuerysetMixin,
     ResourceSearchMixin,
     ResourceUpdateMessageMixin,
 )
@@ -119,9 +120,8 @@ _BUILTIN_THEMES = {"bootstrap", "tailwind", "plain"}
 
 class FieldsAllWarning(UserWarning):
     """
-    Raised at instantiation when `fields = "__all__"` (default): all model
-    fields are exposed in the generated form. Explicitly list the fields
-    allowed for writing (see README, Security).
+    Raised at instantiation when the legacy `fields = "__all__"` compatibility
+    value is used. Explicitly list the fields allowed for writing.
     """
 
 
@@ -135,7 +135,8 @@ class Resource:
     """
 
     model = None
-    fields = "__all__"
+    fields = []
+    public = False
     readonly_fields: list = []
     list_display: list | None = None
     search_fields: list = []
@@ -338,9 +339,7 @@ class Resource:
     # ------------------------------------------------------------------
     def get_base_queryset(self):
         """
-        Base queryset used by all views. Override to restrict access
-        (e.g. filter by owner) — see the security warning in the README:
-        this filtering is NOT done automatically in V1.
+        Base queryset before request-specific authorization scoping.
         """
         qs = self.model._default_manager.all()
         if self.select_related:
@@ -348,6 +347,19 @@ class Resource:
         if self.prefetch_related:
             qs = qs.prefetch_related(*self.prefetch_related)
         return qs
+
+    def scope_queryset(self, queryset, request=None):
+        """
+        Restrict objects visible to the current request.
+
+        Override this method for tenant/owner isolation. It is applied to
+        list, detail, update, and delete views, as well as injected contexts.
+        """
+        return queryset
+
+    def get_queryset(self, request=None):
+        """Return the fully request-scoped queryset for all CRUD operations."""
+        return self.scope_queryset(self.get_base_queryset(), request)
 
     # ------------------------------------------------------------------
     # List filtering (list_filter)
@@ -402,7 +414,7 @@ class Resource:
             qs = qs.filter(**{field_name: value})
         return qs
 
-    def get_list_filter_options(self, params):
+    def get_list_filter_options(self, params, request=None):
         """
         Options for the `<select>` elements in `_filters.html`:
         [{field, options: [{value, label, selected}]}]. "Tous" (empty
@@ -433,7 +445,7 @@ class Resource:
                     })
             else:
                 distinct = (
-                    self.get_base_queryset()
+                    self.get_queryset(request)
                     .order_by(field_name)
                     .values_list(field_name, flat=True)
                     .distinct()
@@ -454,36 +466,55 @@ class Resource:
         """
         Override to return a list of Django mixins/permission classes
         (e.g. [LoginRequiredMixin]), inserted into the MRO of the
-        generated views. WARNING: returns [] by default (no restriction).
+        generated views. Resources are protected by LoginRequiredMixin by
+        default; set ``public = True`` explicitly for a public resource.
         """
-        return []
+        if self.public:
+            return []
+        from django.contrib.auth.mixins import LoginRequiredMixin
+
+        return [LoginRequiredMixin]
 
     def _enforce_permissions(self, request):
         """
-        Applies `get_permissions()` outside of a Django view (contexts
-        computed for injected partials: `get_list_context`,
-        `get_form_context`, `get_detail_context`). Full pages already
-        apply these mixins via `dispatch()`; without this check, an
-        anonymous visitor could obtain the content of a protected
-        Resource via a `djresource_*` tag. Raises PermissionDenied.
+        Runs the same permission mixin dispatch chain used by full views.
+        This includes UserPassesTestMixin and custom business permission
+        mixins, not only LoginRequiredMixin/PermissionRequiredMixin.
         """
-        from django.contrib.auth.mixins import PermissionRequiredMixin
-        from django.core.exceptions import PermissionDenied
+        from django.views import View
 
+        if request is None:
+            raise ValueError("A request is required to enforce Resource permissions.")
         permissions = self.get_permissions()
         if not permissions:
             return
-        user = getattr(request, "user", None)
-        if user is None or not getattr(user, "is_authenticated", False):
+
+        permission_view = type(
+            f"{self.name.title()}PermissionProbe",
+            (*permissions, View),
+            self._permission_view_attrs(),
+        )()
+        permission_view.setup(request)
+        response = permission_view.dispatch(request)
+        if getattr(response, "status_code", 200) in (301, 302, 303, 307, 308):
+            from django.core.exceptions import PermissionDenied
+
             raise PermissionDenied("Authentication required to access this resource.")
-        for perm in permissions:
-            if issubclass(perm, PermissionRequiredMixin):
-                required = getattr(perm, "permission_required", None)
-                if required:
-                    if isinstance(required, str):
-                        required = (required,)
-                    if not user.has_perms(required):
-                        raise PermissionDenied("Insufficient permission to access this resource.")
+
+    def _permission_view_attrs(self):
+        """Attributes shared by generated views and the partial permission probe."""
+        attrs = {"resource": self}
+        for attr_name in (
+            "permission_required",
+            "raise_exception",
+            "login_url",
+            "redirect_field_name",
+        ):
+            if hasattr(self, attr_name):
+                attrs[attr_name] = getattr(self, attr_name)
+        if hasattr(self, "test_func"):
+            attrs["test_func"] = lambda view: self.test_func(view.request)
+        return attrs
 
     # ------------------------------------------------------------------
     # Route names
@@ -515,7 +546,7 @@ class Resource:
         pagination) without going through a ListView. See README "Level 3".
         """
         self._enforce_permissions(request)
-        qs = self.get_base_queryset()
+        qs = self.get_queryset(request)
 
         query = request.GET.get("q", "").strip() if request else ""
         if query and self.search_fields:
@@ -543,7 +574,7 @@ class Resource:
             "search_enabled": bool(self.search_fields),
             "search_query": query,
             "filters_enabled": bool(self.list_filter),
-            "list_filters": self.get_list_filter_options(params),
+            "list_filters": self.get_list_filter_options(params, request),
             "current_sort": sort or "",
             "current_dir": direction,
             "is_paginated": paginator.num_pages > 1,
@@ -568,7 +599,9 @@ class Resource:
         form_class = self.get_form_class()
         instance = None
         if lookup is not None:
-            instance = get_object_or_404(self.get_base_queryset(), **{self.lookup_field: lookup})
+            instance = get_object_or_404(
+                self.get_queryset(request), **{self.lookup_field: lookup}
+            )
         form = form_class(instance=instance)
 
         context = self._base_url_context()
@@ -590,7 +623,9 @@ class Resource:
         clean 404.
         """
         self._enforce_permissions(request)
-        instance = get_object_or_404(self.get_base_queryset(), **{self.lookup_field: lookup})
+        instance = get_object_or_404(
+            self.get_queryset(request), **{self.lookup_field: lookup}
+        )
         context = self._base_url_context()
         context["object"] = instance
         return context
@@ -606,12 +641,12 @@ class Resource:
             ResourceOrderingMixin,
             ResourceFilterMixin,
             *self.get_permissions(),
+            ResourceQuerysetMixin,
             ListView,
         )
         attrs = {
-            "resource": resource,
+            **self._permission_view_attrs(),
             "model": self.model,
-            "queryset": self.get_base_queryset(),
             "template_name": self._theme_template("list", self.template_list),
             "paginate_by": self.paginate_by,
             "context_object_name": "object_list",
@@ -622,11 +657,16 @@ class Resource:
 
     def get_detail_view(self):
         resource = self
-        bases = (ResourceContextMixin, ResourceLookupMixin, *self.get_permissions(), DetailView)
+        bases = (
+            ResourceContextMixin,
+            ResourceLookupMixin,
+            *self.get_permissions(),
+            ResourceQuerysetMixin,
+            DetailView,
+        )
         attrs = {
-            "resource": resource,
+            **self._permission_view_attrs(),
             "model": self.model,
-            "queryset": self.get_base_queryset(),
             "template_name": self._theme_template("detail", self.template_detail),
             "context_object_name": "object",
         }
@@ -639,10 +679,11 @@ class Resource:
             ResourceFormActionMixin,
             ResourceCreateMessageMixin,
             *self.get_permissions(),
+            ResourceQuerysetMixin,
             CreateView,
         )
         attrs = {
-            "resource": resource,
+            **self._permission_view_attrs(),
             "model": self.model,
             "form_class": self.get_form_class(),
             "template_name": self._theme_template("form", self.template_form),
@@ -658,12 +699,12 @@ class Resource:
             ResourceLookupMixin,
             ResourceUpdateMessageMixin,
             *self.get_permissions(),
+            ResourceQuerysetMixin,
             UpdateView,
         )
         attrs = {
-            "resource": resource,
+            **self._permission_view_attrs(),
             "model": self.model,
-            "queryset": self.get_base_queryset(),
             "form_class": self.get_form_class(),
             "template_name": self._theme_template("form", self.template_form),
             "get_success_url": lambda self_view: resource.get_success_url_list(),
@@ -677,12 +718,12 @@ class Resource:
             ResourceLookupMixin,
             ResourceDeleteMessageMixin,
             *self.get_permissions(),
+            ResourceQuerysetMixin,
             DeleteView,
         )
         attrs = {
-            "resource": resource,
+            **self._permission_view_attrs(),
             "model": self.model,
-            "queryset": self.get_base_queryset(),
             "template_name": self._theme_template("confirm_delete", self.template_delete),
             "get_success_url": lambda self_view: resource.get_success_url_list(),
         }

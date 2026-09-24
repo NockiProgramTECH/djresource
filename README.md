@@ -95,6 +95,7 @@ the default with `startproject`, so normally there is nothing to do).
 Open `bibliotheque/models.py`:
 
 ```python
+from django.conf import settings
 from django.db import models
 
 
@@ -102,6 +103,9 @@ class Livre(models.Model):
     titre = models.CharField("Titre", max_length=200)
     auteur = models.CharField("Auteur", max_length=150)
     annee = models.PositiveIntegerField("Année de publication")
+    proprietaire = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE
+    )
     disponible = models.BooleanField("Disponible", default=True)
 
     class Meta:
@@ -124,9 +128,17 @@ from .models import Livre
 class LivreResource(Resource):
     model = Livre
     fields = ["titre", "auteur", "annee", "disponible"]
+    readonly_fields = ["proprietaire"]
     list_display = ["titre", "auteur", "annee", "disponible"]
     search_fields = ["titre", "auteur"]
     ordering_fields = ["titre", "annee"]
+
+    def scope_queryset(self, queryset, request):
+        return queryset.filter(proprietaire=request.user)
+
+    def before_save(self, instance, request, is_new):
+        if is_new:
+            instance.proprietaire = request.user
 ```
 
 ### Step 8 — Wire up the routes
@@ -159,9 +171,11 @@ If everything goes well, you will see lines such as `Applying bibliotheque.0001_
 python manage.py runserver
 ```
 
-Open `http://127.0.0.1:8000/livres/` in your browser. You should see
-an empty list with a "+ Add" button (Bootstrap by default). Click
-it, create a book, go back to the list: it should appear.
+Open `http://127.0.0.1:8000/livres/` in your browser. You are redirected
+to login until you authenticate. After login, create a book and verify that
+the list only contains books owned by the current user. The complete
+security-first tutorial is also available in
+[the documentation](docs/en/guide/quickstart.md).
 
 **If it works → the library is correctly integrated.** You can now
 try, in order, to practice:
@@ -545,27 +559,29 @@ pages of each theme.
 
 ## ⚠️ Security — read before any deployment
 
-1. **No permissions by default.** `get_permissions()` returns `[]`:
-   all generated views are accessible without authentication until
-   you explicitly protect them.
+1. **Authentication is required by default.** Generated CRUD views and
+   injected components require a logged-in user. To make a resource public,
+   opt in explicitly with `public = True`:
 
     ```python
-   from django.contrib.auth.mixins import LoginRequiredMixin
-
    class ProduitResource(Resource):
        model = Produit
-       def get_permissions(self):
-           return [LoginRequiredMixin]
+       public = True
    ```
 
-2. **No owner filtering in V1 (IDOR risk).** Even
-   logged in, a user can view/edit any object of the
-   model, unless you filter `get_base_queryset()` yourself by
-   the current user.
+2. **Scope every object access.** Override `scope_queryset(queryset, request)`
+   to isolate tenants/owners. The resulting `get_queryset(request)` is used
+   for list, detail, update, delete, and all injected contexts:
 
-3. **`fields = "__all__"` exposes all model fields** in the
-   generated form. Always explicitly list the fields allowed
-   for writing for a model containing sensitive fields.
+   ```python
+   def scope_queryset(self, queryset, request):
+       return queryset.filter(owner=request.user)
+   ```
+
+3. **Writing is deny-by-default.** `fields = []` is the default. Explicitly
+   list the fields allowed for writing. The legacy `fields = "__all__"` value
+   remains supported with a `FieldsAllWarning` for compatibility, but should
+   not be used for sensitive models.
 
 4. **The `djresource_*` tags dynamically import** (`import_string`)
    the path passed as an argument. This path must **always** be a
@@ -591,7 +607,7 @@ pages of each theme.
 | Attribute | Role |
 |---|---|
 | `model` | Django model (required) |
-| `fields` | Form fields (`"__all__"` by default — see Security §3) |
+| `fields` | Allowlist of writable form fields (empty by default; see Security §3) |
 | `readonly_fields` | Fields displayed but not editable |
 | `list_display` | Columns displayed in the list |
 | `search_fields` | Fields covered by text search |
@@ -606,7 +622,9 @@ pages of each theme.
 | `template_list/detail/form/delete` | Override for a specific template |
 | `get_extra_context(view)` | Injects business data into the context of all views |
 | `get_list_context/get_form_context/get_detail_context` | Context computed outside the view (100% custom display) |
-| `get_permissions()` | To override to restrict access — see Security §1 |
+| `public` | Explicitly opt a resource out of default authentication |
+| `get_permissions()` | Additional permission mixins; default is `LoginRequiredMixin` |
+| `scope_queryset(queryset, request)` / `get_queryset(request)` | Request-aware object isolation |
 
 ## Available template tags (`{% load djresource_tags %}`)
 

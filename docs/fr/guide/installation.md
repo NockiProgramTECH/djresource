@@ -43,6 +43,13 @@ INSTALLED_APPS = [
     templates par défaut fournis par la bibliothèque
     (`djresource/templates/djresource/*.html`).
 
+!!! warning "Défauts sécurisés"
+    Les ressources générées exigent une authentification, sauf si
+    `public = True` est déclaré explicitement. Les formulaires utilisent
+    `fields = []` par défaut : déclarez une liste blanche d'écriture. Pour
+    les données appartenant à un utilisateur ou à un tenant, implémentez
+    `scope_queryset(queryset, request)` avant d'exposer la ressource.
+
 ## Vérifier l'installation
 
 ```bash

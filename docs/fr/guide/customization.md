@@ -97,7 +97,7 @@ class ProduitResource(Resource):
 | Attribut | Rôle |
 |---|---|
 | `model` | Modèle Django (**obligatoire**) |
-| `fields` | Champs du formulaire (**recommandé : liste explicite** ; `"__all__"` est le défaut mais émet un `FieldsAllWarning`) |
+| `fields` | Liste blanche des champs du formulaire (vide par défaut) |
 | `readonly_fields` | Champs affichés mais non modifiables |
 | `list_display` | Colonnes affichées dans la liste |
 | `search_fields` | Champs concernés par la recherche texte |
@@ -110,16 +110,14 @@ class ProduitResource(Resource):
 | `auto_form_css` | Injection auto des classes CSS du thème sur le formulaire (défaut : `True`) |
 | `template_list` / `template_detail` / `template_form` / `template_delete` | Surcharge d'un template précis (prioritaire sur `theme`) |
 | `get_extra_context(view)` | Injecte des données métier supplémentaires dans le contexte de toutes les vues |
-| `get_permissions()` | À surcharger pour restreindre l'accès |
-| `get_base_queryset()` | Filtre commun (List/Detail/Update/Delete) avec préchargement des relations |
+| `public` | Active explicitement l'accès sans authentification |
+| `get_permissions()` | Mixins de permission supplémentaires |
+| `scope_queryset(queryset, request)` / `get_queryset(request)` | Isolation des objets selon la requête |
+| `get_base_queryset()` | Queryset de base avec préchargement des relations |
 
-!!! danger "Sécurité : ne pas utiliser `fields = "__all__"`"
-    Le défaut `fields = "__all__"` expose **tous** les champs du modèle dans
-    le formulaire généré. Si vous ajoutez plus tard un champ sensible à votre
-    modèle (ex. `is_admin`, `proprietaire`, un slug interne), il devient
-    silencieusement modifiable via le formulaire — c'est le risque de
-    **mass assignment**. Déclarez toujours la liste explicite des champs
-    modifiables :
+!!! danger "Sécurité : écriture interdite par défaut"
+    Le défaut `fields = []` n'expose aucun champ du modèle dans le formulaire.
+    Déclarez toujours la liste explicite des champs modifiables :
 
     ```python
     class ProduitResource(Resource):
@@ -127,5 +125,6 @@ class ProduitResource(Resource):
         fields = ["nom", "prix", "stock"]   # uniquement ces champs
     ```
 
-    La bibliothèque émet un `FieldsAllWarning` à l'instanciation tant que
-    `fields = "__all__"` est utilisé.
+    La valeur historique `fields = "__all__"` reste disponible pour
+    compatibilité et émet un `FieldsAllWarning`; ne l'utilisez pas pour des
+    modèles sensibles.

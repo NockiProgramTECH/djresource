@@ -97,7 +97,7 @@ class ProduitResource(Resource):
 | Attribute | Role |
 |---|---|
 | `model` | Django model (**required**) |
-| `fields` | Form fields (**recommended: explicit list**; `"__all__"` is the default but emits a `FieldsAllWarning`) |
+| `fields` | Writable form allowlist (empty by default; legacy `"__all__"` emits `FieldsAllWarning`) |
 | `readonly_fields` | Fields displayed but not editable |
 | `list_display` | Columns displayed in the list |
 | `search_fields` | Fields covered by text search |
@@ -110,16 +110,16 @@ class ProduitResource(Resource):
 | `auto_form_css` | Auto-injection of the theme's CSS classes on the form (default: `True`) |
 | `template_list` / `template_detail` / `template_form` / `template_delete` | Override of a specific template (takes precedence over `theme`) |
 | `get_extra_context(view)` | Injects additional business data into the context of all views |
-| `get_permissions()` | Override to restrict access |
-| `get_base_queryset()` | Common filter (List/Detail/Update/Delete) with relation preloading |
+| `public` | Explicitly opt out of default authentication |
+| `get_permissions()` | Additional permission mixins |
+| `scope_queryset(queryset, request)` / `get_queryset(request)` | Request-aware object isolation |
+| `get_base_queryset()` | Base queryset with relation preloading |
 
-!!! danger "Security: do not use `fields = "__all__"`"
-    The default `fields = "__all__"` exposes **all** model fields in
+!!! danger "Security: writing is deny-by-default"
+    The default `fields = []` exposes no model fields in
     the generated form. If you later add a sensitive field to your
-    model (e.g. `is_admin`, `proprietaire`, an internal slug), it silently
-    becomes editable via the form — this is the
-    **mass assignment** risk. Always declare the explicit list of
-    editable fields:
+    model, it is not silently made editable. Always declare the explicit
+    list of editable fields:
 
     ```python
     class ProduitResource(Resource):
@@ -127,5 +127,5 @@ class ProduitResource(Resource):
         fields = ["nom", "prix", "stock"]   # uniquement ces champs
     ```
 
-    The library emits a `FieldsAllWarning` at instantiation as long as
-    `fields = "__all__"` is used.
+    The legacy `fields = "__all__"` remains supported for compatibility and
+    emits a `FieldsAllWarning`; do not use it for sensitive models.
