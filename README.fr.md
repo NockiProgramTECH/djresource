@@ -735,3 +735,15 @@ def article_saved(sender, instance, resource, **kwargs):
 synchrones, leurs exceptions se propagent ; utilisez `transaction.on_commit()`
 pour les effets externes. Les écritures ORM directes et opérations groupées
 n’émettent pas ces signaux.
+
+## HTMX (optionnel)
+
+Activez `htmx = True` sur la Resource. Les requêtes avec `HX-Request: true`
+affichent `list_partial`, `form_partial`, `detail_partial` ou
+`confirm_delete_partial` au lieu de la page complète (trois thèmes). Un formulaire
+invalide renvoie aussi un partiel ; une écriture réussie conserve sa redirection.
+Les autres requêtes restent inchangées. Permissions et CSRF restent appliqués,
+et les réponses varient selon `HX-Request`. Chargez HTMX vous-même ; par exemple,
+un bouton peut utiliser `hx-get="/articles/"` et `hx-target="#articles"`.
+La sélection des partiels suit le thème, pas les surcharges de page complète.
+Surchargez `get_template_names()` de la vue générée pour un partiel personnalisé.

@@ -731,3 +731,15 @@ follows `after_delete` (pk cleared). All pass `instance` and `resource`, with
 `sender=resource.model`. Validation vetoes emit nothing. Receivers run
 synchronously, exceptions propagate; use `transaction.on_commit()` for external
 effects. Direct ORM writes and bulk operations do not emit these signals.
+
+## HTMX (opt-in)
+
+Set `htmx = True` on the Resource. Requests with `HX-Request: true` render
+`list_partial`, `form_partial`, `detail_partial`, or `confirm_delete_partial`
+instead of the complete page (all three themes). Invalid submissions also return
+a partial; successful writes keep their normal redirect. Other requests are
+unchanged. Permissions and CSRF remain enforced, and responses vary on
+`HX-Request`. Include HTMX yourself, e.g. use `hx-get="/articles/"`
+with `hx-target="#articles"` on a button. Partial selection uses the theme;
+full-page template overrides are not reused as partials. Override the generated
+view's `get_template_names()` for a custom partial.

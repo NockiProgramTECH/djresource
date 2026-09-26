@@ -1,0 +1,13 @@
+{% load djresource_tags %}
+<h1 class="h3 mb-4">Supprimer {{ verbose_name }} #{{ object|get_attr:resource.lookup_field }} ?</h1>
+
+<div class="alert alert-warning">
+    Cette action est <strong>irréversible</strong>. Voulez-vous vraiment supprimer
+    « {{ object }} » ?
+</div>
+
+<form method="post" action="{% url url_delete object|get_attr:resource.lookup_field %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Oui, supprimer</button>
+    <a href="{% url url_list %}" class="btn btn-outline-secondary">Annuler</a>
+</form>

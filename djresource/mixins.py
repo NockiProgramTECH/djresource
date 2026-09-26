@@ -26,6 +26,7 @@ from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
 
 from .signals import resource_pre_save, resource_post_save, resource_post_delete
 
@@ -33,7 +34,28 @@ from .signals import resource_pre_save, resource_post_save, resource_post_delete
 # ---------------------------------------------------------------------
 # Common context (all generated views)
 # ---------------------------------------------------------------------
-class ResourceContextMixin:
+class ResourceHTMXMixin:
+    """Opt-in partial template selection, without changing successful redirects.
+
+    HTMX's client script is not bundled. Partial templates use the resource
+    theme, not template_list/form/detail/delete overrides; override
+    get_template_names() in a generated subclass for custom partials.
+    Vary protects full/partial representations in shared caches.
+    """
+
+    def get_template_names(self):
+        if self.resource.htmx and self.request.headers.get("HX-Request") == "true":
+            return [self.resource._theme_template(self.partial_template_kind, None)]
+        return super().get_template_names()
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        if self.resource.htmx:
+            patch_vary_headers(response, ["HX-Request"])
+        return response
+
+
+class ResourceContextMixin(ResourceHTMXMixin):
     """
     Injects the resource, useful route names, and additional business
     context (via `Resource.get_extra_context()`) into the template

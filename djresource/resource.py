@@ -141,6 +141,7 @@ class Resource:
     fields = []
     public = False
     inlines: list = []
+    htmx = False
     readonly_fields: list = []
     list_display: list | None = None
     search_fields: list = []
@@ -678,6 +679,7 @@ class Resource:
         attrs = {
             **self._permission_view_attrs(),
             "model": self.model,
+            "partial_template_kind": "list_partial",
             "template_name": self._theme_template("list", self.template_list),
             "paginate_by": self.paginate_by,
             "context_object_name": "object_list",
@@ -698,6 +700,7 @@ class Resource:
         attrs = {
             **self._permission_view_attrs(),
             "model": self.model,
+            "partial_template_kind": "detail_partial",
             "template_name": self._theme_template("detail", self.template_detail),
             "context_object_name": "object",
         }
@@ -719,6 +722,7 @@ class Resource:
             **self._permission_view_attrs(),
             "model": self.model,
             "form_class": self.get_form_class(),
+            "partial_template_kind": "form_partial",
             "template_name": self._theme_template("form", self.template_form),
             "get_success_url": lambda self_view: resource.get_success_url_list(),
         }
@@ -741,6 +745,7 @@ class Resource:
             **self._permission_view_attrs(),
             "model": self.model,
             "form_class": self.get_form_class(),
+            "partial_template_kind": "form_partial",
             "template_name": self._theme_template("form", self.template_form),
             "get_success_url": lambda self_view: resource.get_success_url_list(),
         }
@@ -760,6 +765,7 @@ class Resource:
         attrs = {
             **self._permission_view_attrs(),
             "model": self.model,
+            "partial_template_kind": "confirm_delete_partial",
             "template_name": self._theme_template("confirm_delete", self.template_delete),
             "get_success_url": lambda self_view: resource.get_success_url_list(),
         }
