@@ -1,6 +1,6 @@
 # Changelog — DjResource
 
-## [0.2.0] — Unreleased
+## [0.2.0] — 2026-09-26
 
 ### Added
 - Authentication by default (`LoginRequiredMixin`), with explicit `public = True` opt-out; permissions also enforced for injected contexts.

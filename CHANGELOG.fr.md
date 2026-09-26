@@ -1,6 +1,6 @@
 # Journal des modifications — DjResource
 
-## [0.2.0] — Non publiée
+## [0.2.0] — 2026-09-26
 
 ### Ajouté
 - Authentification par défaut (`LoginRequiredMixin`), désactivation explicite avec `public = True` ; permissions aussi appliquées aux contextes injectés.
