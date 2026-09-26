@@ -12,6 +12,13 @@
 - `inlines` optionnels : validation, sauvegarde atomique parent/enfants, rendu dans les formulaires fournis.
 - Balises de données brutes et méthodes de contexte pour listes, formulaires et détails.
 - Formulaires avec fichiers et affichage des relations.
+- Signaux Django natifs `resource_pre_save`, `resource_post_save`, `resource_post_delete`.
+- Réponses partielles HTMX optionnelles (confirmation de suppression incluse), avec `Vary: HX-Request`.
+- Export CSV des résultats isolés/recherchés/filtrés/triés, sans pagination ; protection contre les formules de tableur.
+- Actions groupées transactionnelles optionnelles, permissions et contrôles de sélection dans les trois thèmes.
+- Bridge `as_admin_class()` partageant liste/recherche/filtres avec l’admin.
+- Bridge DRF optionnel et chargé à la demande (`as_viewset()`, `djresource[api]`) : CRUD isolé, adaptateur de permissions, hooks/signaux, recherche/filtres/tri et pagination.
+- CI Django 5.2/6.0 avec versions Python compatibles ; tests DRF optionnels dédiés.
 
 ### Corrigé
 - Branchement des hooks sauvegarde/suppression et des inlines aux vues HTTP générées.

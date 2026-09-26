@@ -639,6 +639,12 @@ pages of each theme.
 | `template_list/detail/form/delete` | Override for a specific template |
 | `get_extra_context(view)` | Injects business data into the context of all views |
 | `get_list_context/get_form_context/get_detail_context` | Context computed outside the view (100% custom display) |
+| `htmx` | Opt-in HX-Request partial rendering (False by default) |
+| `bulk_actions` | Optional named actions on selected list rows (empty by default) |
+| `get_bulk_actions(request)` | Override the available action registry per request |
+| `has_bulk_action_permission(action, request)` | Additional action authorization (list permissions always apply) |
+| `as_admin_class()` | Generate an unregistered ModelAdmin sharing list/search/filter options |
+| `as_viewset()` | Generate an optional DRF ModelViewSet; explicit router registration required |
 | `inlines` | Inline definitions; empty by default |
 | `clean(instance, request)` | Validate before saving; raise ValidationError |
 | `before_save(instance, request, is_new)` | Modify before saving |
@@ -805,3 +811,53 @@ registration. Django admin's staff/model permissions remain unchanged; Resource
 `public`, owner scope, forms, hooks, and inlines are **not** transferred. Add
 admin-specific isolation/business rules in that subclass. Values must satisfy
 Django admin's checks (for example, direct M2M list columns are not supported).
+
+## Optional REST API (Django REST Framework)
+
+DRF is **not required** for HTML CRUD. Install `pip install 'djresource[api]'`
+(or `pip install -e '.[api]'` in a checkout), then explicitly register a viewset:
+
+```python
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+router = DefaultRouter()
+router.register("articles", ArticleScopedResource().as_viewset(), basename="api-article")
+urlpatterns = [path("api/", include(router.urls))]
+```
+
+Use an authenticated `ArticleScopedResource` as in the security example.
+`as_viewset()` lazily generates an ordinary, subclassable `ModelViewSet` with a
+`ModelSerializer`. Missing DRF raises an explanatory `ImproperlyConfigured` only
+when this method is called; importing djresource or using HTML views still works.
+
+- Only `fields` are serialized; no implicit `id`, owner or sensitive fields are
+  added. Declare identifiers if you want them in responses. `readonly_fields`
+  are respected. Legacy `"__all__"` remains supported with its exposure warning.
+- All reads/updates/deletes use `get_queryset(request)` and `scope_queryset()`;
+  the API also respects `lookup_field` / `lookup_url_kwarg` (e.g. slug URLs).
+- DRF query conventions apply: `?search=rice&ordering=-titre&page=2`, with
+  `search_fields`, `ordering_fields`, `list_filter`, and `paginate_by` reused.
+  These differ from the HTML list's `q`, `sort`, and `dir` parameters.
+- Project DRF authentication settings apply. A DRF permission adapter executes
+  `get_permissions()`'s Django mixin chain using the authenticated DRF request:
+  default login protection, explicit `public = True`, `PermissionRequiredMixin`,
+  `UserPassesTestMixin`, and cooperative custom dispatch checks. A denial or
+  redirect becomes an API denial, never a login-page redirect. Custom mixins
+  must delegate to `super().dispatch()` to grant access. The probe exposes
+  request, kwargs, resource, action, get_queryset/get_object and permission
+  attributes, not HTML form/context methods. Replacing `permission_classes`
+  on a subclass deliberately replaces this policy.
+- Create/update/delete run hooks and signals, atomically including M2M writes.
+  This means `before_save` still assigns an owner on API creation. Django
+  `ValidationError` from hooks becomes HTTP 400; use `transaction.on_commit()`
+  for external effects. Hooks receive a DRF `Request`.
+
+**Limits:** serializer validation replaces ModelForm validation and does not
+call `model.full_clean()` automatically. Custom ModelForms, inline formsets,
+nested writes, widgets, CSV and bulk actions are not bridged. FK/M2M choices
+are not automatically tenant-scoped: subclass the generated serializer to
+restrict relation querysets. Keep required hooks if you replace the serializer's
+create/update methods or the viewset's perform methods. No URLs are published
+until you register the generated class yourself. Set up DRF authentication,
+throttling and session CSRF protection as appropriate for your project.

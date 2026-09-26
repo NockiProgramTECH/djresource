@@ -821,6 +821,20 @@ class Resource:
         }
         return type(f"{self.name.title()}DeleteView", bases, attrs)
 
+    def as_viewset(self):
+        """Generate a DRF ModelViewSet lazily; DRF is an optional dependency.
+
+        Register on a DRF router with an explicit basename. Reuses fields,
+        readonly_fields, scoped queryset, permission mixins, lookup, search,
+        ordering, filters, pagination and business hooks/signals. HTML inlines,
+        custom forms, widgets, CSV and bulk actions are not bridged. Related
+        FK/M2M authorization requires a custom serializer. See api.build_viewset
+        for query conventions, permission-probe limits and validation behavior.
+        """
+        from .api import build_viewset
+
+        return build_viewset(self)
+
     def as_admin_class(self):
         """Generate an unregistered ModelAdmin sharing list/search/filter options.
 

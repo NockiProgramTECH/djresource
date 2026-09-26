@@ -640,6 +640,12 @@ complètes de chaque thème.
 | `template_list/detail/form/delete` | Surcharge d'un template précis |
 | `get_extra_context(view)` | Injecte des données métier dans le contexte de toutes les vues |
 | `get_list_context/get_form_context/get_detail_context` | Contexte calculé hors vue (affichage 100% custom) |
+| `htmx` | Rendu partiel avec HX-Request (False par défaut) |
+| `bulk_actions` | Actions nommées sur les lignes sélectionnées (vide par défaut) |
+| `get_bulk_actions(request)` | Surcharger les actions disponibles selon la requête |
+| `has_bulk_action_permission(action, request)` | Autorisation supplémentaire par action (permissions de liste toujours appliquées) |
+| `as_admin_class()` | Générer un ModelAdmin non enregistré partageant liste/recherche/filtres |
+| `as_viewset()` | Générer un ModelViewSet DRF optionnel ; enregistrement explicite sur un routeur |
 | `inlines` | Définitions inline ; liste vide par défaut |
 | `clean(instance, request)` | Valider avant sauvegarde ; lever ValidationError |
 | `before_save(instance, request, is_new)` | Modifier avant sauvegarde |
@@ -813,3 +819,55 @@ inchangées ; `public`, scope propriétaire, formulaires, hooks et inlines Resou
 ne sont **pas** transférés. Ajoutez l’isolation et les règles métier propres à
 l’admin dans la sous-classe. Les valeurs doivent respecter les vérifications
 Django admin (par exemple, colonnes M2M directes non prises en charge).
+
+## API REST optionnelle (Django REST Framework)
+
+DRF n’est **pas requis** pour le CRUD HTML. Installez `pip install 'djresource[api]'`
+(ou `pip install -e '.[api]'` dans le dépôt), puis enregistrez explicitement le viewset :
+
+```python
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+router = DefaultRouter()
+router.register("articles", ArticleScopedResource().as_viewset(), basename="api-article")
+urlpatterns = [path("api/", include(router.urls))]
+```
+
+Utilisez une `ArticleScopedResource` authentifiée comme dans l’exemple sécurité.
+`as_viewset()` génère à la demande un `ModelViewSet` standard surchargeable et un
+`ModelSerializer`. Sans DRF, seul l’appel de cette méthode lève une erreur
+`ImproperlyConfigured` explicative ; imports et vues HTML restent fonctionnels.
+
+- Seuls les `fields` sont sérialisés ; aucun `id`, propriétaire ou champ sensible
+  implicite n’est ajouté. Déclarez les identifiants souhaités dans les réponses.
+  `readonly_fields` est respecté. `"__all__"` reste accepté avec son avertissement.
+- Lecture/modification/suppression utilisent `get_queryset(request)` et
+  `scope_queryset()`, avec `lookup_field` / `lookup_url_kwarg` (URLs par slug, etc.).
+- Conventions DRF : `?search=riz&ordering=-titre&page=2`, avec réutilisation de
+  `search_fields`, `ordering_fields`, `list_filter` et `paginate_by`. Ces paramètres
+  diffèrent de `q`, `sort` et `dir` de la liste HTML.
+- Les réglages d’authentification DRF du projet s’appliquent. Un adaptateur DRF
+  exécute la chaîne de mixins Django de `get_permissions()` avec la requête DRF
+  authentifiée : connexion par défaut, `public = True`, `PermissionRequiredMixin`,
+  `UserPassesTestMixin` et contrôles personnalisés coopératifs dans dispatch.
+  Refus et redirections deviennent un refus API, jamais une page de connexion.
+  Les mixins doivent appeler `super().dispatch()` pour autoriser l’accès. La
+  sonde expose request, kwargs, resource, action, get_queryset/get_object et les
+  attributs de permission, pas les méthodes de formulaire/contexte HTML.
+  Remplacer `permission_classes` sur une sous-classe remplace cette politique.
+- Création/modification/suppression exécutent hooks et signaux atomiquement, M2M
+  inclus. `before_save` assigne donc aussi le propriétaire lors d’une création
+  API. Une `ValidationError` Django dans un hook devient HTTP 400. Utilisez
+  `transaction.on_commit()` pour les effets externes. Les hooks reçoivent une
+  `Request` DRF.
+
+**Limites :** la validation du serializer remplace celle du ModelForm, sans
+appel automatique de `model.full_clean()`. ModelForms personnalisés, inlines,
+écritures imbriquées, widgets, CSV et actions groupées ne sont pas transférés.
+Les choix FK/M2M ne sont pas automatiquement isolés par tenant : surchargez le
+serializer généré pour filtrer leurs querysets. Conservez les hooks nécessaires
+si vous remplacez create/update du serializer ou les méthodes perform du viewset.
+Aucune URL n’est publiée avant votre enregistrement explicite. Configurez
+l’authentification, la limitation de débit et la protection CSRF des sessions DRF
+selon les besoins du projet.

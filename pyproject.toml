@@ -53,6 +53,7 @@ Issues = "https://github.com/NockiProgramTECH/djresource/issues"
 Changelog = "https://nockiprogramtech.github.io/djresource/changelog/"
 
 [project.optional-dependencies]
+api = ["djangorestframework>=3.15"]
 test = [
     "pytest>=7",
     "pytest-django>=4",
