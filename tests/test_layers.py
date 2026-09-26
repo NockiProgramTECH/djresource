@@ -301,3 +301,33 @@ class BulkActionTests(LayerTestCase):
             self.resource.bulk_actions = actions
             with self.assertRaises(ImproperlyConfigured):
                 self.resource.get_bulk_actions(self.request())
+
+
+class AdminBridgeTests(LayerTestCase):
+    def test_generates_reusable_unregistered_admin_with_copied_options(self):
+        from django.contrib.admin import AdminSite, ModelAdmin
+        self.resource.list_display = ["titre", "slug"]
+        self.resource.search_fields = ["titre"]
+        cls = self.resource.as_admin_class()
+        self.assertTrue(issubclass(cls, ModelAdmin))
+        self.assertEqual(cls.list_display, ("titre", "slug"))
+        self.assertEqual(cls.search_fields, ("titre",))
+        self.assertEqual(cls.list_filter, ("actif", "etat"))
+        site = AdminSite(name="test_admin")
+        self.assertFalse(site.is_registered(Article))
+        site.register(Article, cls)
+        self.assertEqual(site._registry[Article].check(), [])
+        self.resource.list_display.append("owner")
+        self.assertEqual(cls.list_display, ("titre", "slug"))
+        other = self.resource.as_admin_class()
+        self.assertIsNot(cls, other)
+        self.assertIn("owner", other.list_display)
+
+    def test_admin_permissions_are_not_made_public(self):
+        from django.contrib.admin import AdminSite
+        model_admin = self.resource.as_admin_class()(Article, AdminSite())
+        self.assertFalse(model_admin.has_change_permission(self.request(user=AnonymousUser())))
+        self.assertFalse(model_admin.has_change_permission(self.request()))
+        self.user.is_superuser = True
+        self.user.is_staff = True
+        self.assertTrue(model_admin.has_change_permission(self.request()))

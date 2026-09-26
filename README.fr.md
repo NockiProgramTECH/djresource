@@ -797,3 +797,19 @@ contournent hooks et signaux Resource : implémentez cette logique explicitement
 si nécessaire. Utilisez `transaction.on_commit` pour les effets externes. Les
 lignes ne sont pas verrouillées contre les changements concurrents de scope.
 Le middleware CSRF doit rester activé dans le projet hôte.
+
+## Bridge Django admin
+
+```python
+from django.contrib import admin
+
+admin.site.register(Article, ArticleResource().as_admin_class())
+```
+
+`as_admin_class()` retourne une sous-classe `ModelAdmin` non enregistrée, avec
+copies de `list_display`, `search_fields` et `list_filter`. Elle peut être
+surchargée avant enregistrement. Les permissions staff/modèle de l’admin restent
+inchangées ; `public`, scope propriétaire, formulaires, hooks et inlines Resource
+ne sont **pas** transférés. Ajoutez l’isolation et les règles métier propres à
+l’admin dans la sous-classe. Les valeurs doivent respecter les vérifications
+Django admin (par exemple, colonnes M2M directes non prises en charge).

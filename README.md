@@ -790,3 +790,18 @@ per-object authorization in `run()`. ORM bulk writes bypass Resource hooks and
 signals, so implement that logic explicitly if needed. Use `transaction.on_commit`
 for external effects. Rows are not locked against concurrent scope changes.
 CSRF middleware must remain enabled in the host project.
+
+## Django admin bridge
+
+```python
+from django.contrib import admin
+
+admin.site.register(Article, ArticleResource().as_admin_class())
+```
+
+`as_admin_class()` returns an unregistered `ModelAdmin` subclass with copied
+`list_display`, `search_fields`, and `list_filter`. You can subclass it before
+registration. Django admin's staff/model permissions remain unchanged; Resource
+`public`, owner scope, forms, hooks, and inlines are **not** transferred. Add
+admin-specific isolation/business rules in that subclass. Values must satisfy
+Django admin's checks (for example, direct M2M list columns are not supported).

@@ -821,6 +821,25 @@ class Resource:
         }
         return type(f"{self.name.title()}DeleteView", bases, attrs)
 
+    def as_admin_class(self):
+        """Generate an unregistered ModelAdmin sharing list/search/filter options.
+
+        Configuration is copied so later Resource mutations do not change the
+        admin class. Only options supported by Django admin may be used (e.g.
+        list_display does not support direct M2M fields). Admin's staff/model
+        permissions remain in force; public, scope_queryset, forms, hooks and
+        inlines are NOT transferred. Subclass the result to add admin-specific
+        object isolation and business rules before registering it.
+        """
+        from django.contrib.admin import ModelAdmin
+
+        return type(f"{self.model.__name__}ResourceAdmin", (ModelAdmin,), {
+            "__module__": self.__class__.__module__,
+            "list_display": tuple(self.list_display),
+            "search_fields": tuple(self.search_fields),
+            "list_filter": tuple(self.list_filter),
+        })
+
     # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
