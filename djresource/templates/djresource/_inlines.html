@@ -1,0 +1,7 @@
+{% for formset in inline_formsets %}
+<fieldset>
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    {% for inline_form in formset %}{{ inline_form.as_p }}{% endfor %}
+</fieldset>
+{% endfor %}

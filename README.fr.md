@@ -665,3 +665,32 @@ python manage.py runserver
 cd demo
 python manage.py test
 ```
+
+## Hooks métier et formsets inline
+
+Surchargez `clean(instance, request)` pour lever une `ValidationError` Django et
+réafficher le formulaire. `before_save(instance, request, is_new)` peut assigner
+le propriétaire ; `after_save(instance, request, is_new)` suit la sauvegarde du
+parent et des M2M. `before_delete(instance, request)` peut lever `ValidationError`
+pour bloquer la suppression ; `after_delete(instance, request)` ne s'exécute
+qu'après suppression (le pk est alors effacé). Par défaut, ces hooks ne font rien.
+Les inlines sont sauvegardés après `after_save`, dans la même transaction.
+Utilisez `transaction.on_commit()` pour les effets externes.
+
+```python
+from django.forms import inlineformset_factory
+
+class NoteInline:
+    def get_formset_class(self, parent_model):
+        return inlineformset_factory(parent_model, Note, fields=["text"], extra=1)
+
+class ArticleWithNotesResource(Resource):
+    model = Article
+    fields = ["titre", "slug"]
+    inlines = [NoteInline()]  # Note possède une ForeignKey vers Article
+```
+
+Les formsets sont validés avant toute écriture et sauvegardés après attribution
+du pk parent. Chaque inline doit avoir un préfixe de formset distinct. Les thèmes
+fournis affichent les champs de gestion et les erreurs. Les formulaires
+personnalisés doivent afficher `inline_formsets`.

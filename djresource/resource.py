@@ -84,6 +84,9 @@ from .mixins import (
     ResourceContextMixin,
     ResourceCreateMessageMixin,
     ResourceDeleteMessageMixin,
+    ResourceDeleteHooksMixin,
+    ResourceSaveHooksMixin,
+    ResourceInlineFormsetMixin,
     ResourceFilterMixin,
     ResourceFormActionMixin,
     ResourceListContextMixin,
@@ -137,6 +140,7 @@ class Resource:
     model = None
     fields = []
     public = False
+    inlines: list = []
     readonly_fields: list = []
     list_display: list | None = None
     search_fields: list = []
@@ -168,6 +172,29 @@ class Resource:
     success_message_create = "%(name)s créé avec succès."
     success_message_update = "%(name)s modifié avec succès."
     success_message_delete = "%(name)s supprimé avec succès."
+
+    def clean(self, instance, request):
+        """Validate before saving; raise ValidationError to reject the form."""
+        pass
+
+    def before_save(self, instance, request, is_new):
+        """Modify the instance immediately before saving (no database write yet)."""
+        pass
+
+    def after_save(self, instance, request, is_new):
+        """React after parent and M2M saving, before inlines; pk is available.
+
+        For external side effects use transaction.on_commit when appropriate.
+        """
+        pass
+
+    def before_delete(self, instance, request):
+        """Raise ValidationError to prevent deletion."""
+        pass
+
+    def after_delete(self, instance, request):
+        """React after deletion; Django has cleared instance.pk."""
+        pass
 
     def __init__(self):
         if self.model is None:
@@ -607,6 +634,10 @@ class Resource:
         context = self._base_url_context()
         context.update({
             "form": form,
+            "inline_formsets": [
+                inline.get_formset_class(self.model)(instance=instance)
+                for inline in self.inlines
+            ],
             "object": instance,
             "form_action_url": (
                 reverse(self.url_name("update"), args=[self.get_lookup_value(instance)])
@@ -678,6 +709,8 @@ class Resource:
             ResourceContextMixin,
             ResourceFormActionMixin,
             ResourceCreateMessageMixin,
+            ResourceInlineFormsetMixin,
+            ResourceSaveHooksMixin,
             *self.get_permissions(),
             ResourceQuerysetMixin,
             CreateView,
@@ -698,6 +731,8 @@ class Resource:
             ResourceFormActionMixin,
             ResourceLookupMixin,
             ResourceUpdateMessageMixin,
+            ResourceInlineFormsetMixin,
+            ResourceSaveHooksMixin,
             *self.get_permissions(),
             ResourceQuerysetMixin,
             UpdateView,
@@ -716,6 +751,7 @@ class Resource:
         bases = (
             ResourceContextMixin,
             ResourceLookupMixin,
+            ResourceDeleteHooksMixin,
             ResourceDeleteMessageMixin,
             *self.get_permissions(),
             ResourceQuerysetMixin,

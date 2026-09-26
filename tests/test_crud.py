@@ -313,3 +313,108 @@ class ProduitCrudTests(TestCase):
         response = self.client.get(reverse("produit_detail", args=[self.produit.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Riz local")
+
+
+class BusinessHooksTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.user = User.objects.create_user(username="hook-owner")
+
+    def request(self, data=None):
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        request = self.factory.post("/articles/nouveau/", data or {})
+        request.user = self.user
+        request.session = {}
+        request._messages = FallbackStorage(request)
+        return request
+
+    def test_scoped_creation_assigns_owner_and_calls_after_save(self):
+        from unittest.mock import Mock
+        resource = ArticleScopedResource()
+        resource.after_save = Mock()
+        response = resource.get_create_view().as_view()(
+            self.request({"titre": "Owned", "slug": "owned"})
+        )
+        self.assertEqual(response.status_code, 302)
+        article = Article.objects.get(slug="owned")
+        self.assertEqual(article.owner, self.user)
+        resource.after_save.assert_called_once()
+        saved, request, is_new = resource.after_save.call_args.args
+        self.assertEqual(saved.pk, article.pk)
+        self.assertTrue(is_new)
+
+    def test_update_hooks(self):
+        from unittest.mock import Mock
+        article = Article.objects.create(titre="Old", slug="old", owner=self.user)
+        resource = ArticleScopedResource()
+        resource.after_save = Mock()
+        response = resource.get_update_view().as_view()(
+            self.request({"titre": "New", "slug": "old"}), slug="old"
+        )
+        self.assertEqual(response.status_code, 302)
+        article.refresh_from_db()
+        self.assertEqual(article.titre, "New")
+        self.assertFalse(resource.after_save.call_args.args[2])
+
+    def test_delete_veto_has_no_success_message(self):
+        from unittest.mock import Mock
+        from django.core.exceptions import ValidationError
+        from django.contrib.messages import get_messages, ERROR
+        article = Article.objects.create(titre="Keep", slug="keep")
+        resource = ArticleResource()
+        resource.before_delete = Mock(side_effect=ValidationError("Keep it"))
+        resource.after_delete = Mock()
+        request = self.request()
+        response = resource.get_delete_view().as_view()(request, slug=article.slug)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Article.objects.filter(pk=article.pk).exists())
+        resource.after_delete.assert_not_called()
+        self.assertEqual([m.level for m in get_messages(request)], [ERROR])
+
+    def inline_data(self, **extra):
+        return {"titre": "Parent", "slug": "parent", "notes-TOTAL_FORMS": "1",
+                "notes-INITIAL_FORMS": "0", "notes-0-text": "Child", **extra}
+
+    def test_inline_saved_after_parent(self):
+        from .resources import ArticleInlineResource
+        from .models import ArticleNote
+        response = ArticleInlineResource().get_create_view().as_view()(
+            self.request(self.inline_data())
+        )
+        self.assertEqual(response.status_code, 302)
+        note = ArticleNote.objects.get()
+        self.assertEqual(note.article_id, Article.objects.get(slug="parent").pk)
+        self.assertEqual(note.article.owner, self.user)
+
+    def test_clean_veto_does_not_save_parent_or_inline(self):
+        from unittest.mock import Mock
+        from django.core.exceptions import ValidationError
+        from .resources import ArticleInlineResource
+        from .models import ArticleNote
+        resource = ArticleInlineResource()
+        resource.clean = Mock(side_effect=ValidationError("Rejected"))
+        response = resource.get_create_view().as_view()(self.request(self.inline_data()))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Rejected")
+        self.assertContains(response, 'value="Child"')
+        self.assertFalse(Article.objects.exists())
+        self.assertFalse(ArticleNote.objects.exists())
+
+    def test_invalid_inline_does_not_save_parent(self):
+        from .resources import ArticleInlineResource
+        response = ArticleInlineResource().get_create_view().as_view()(
+            self.request(self.inline_data(**{"notes-0-text": "x" * 101}))
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Article.objects.exists())
+
+    def test_inline_failure_rolls_back_parent(self):
+        from unittest.mock import patch
+        from .resources import ArticleInlineResource
+        from .models import ArticleNote
+        with patch.object(ArticleNote, "save", side_effect=RuntimeError("storage")):
+            with self.assertRaises(RuntimeError):
+                ArticleInlineResource().get_create_view().as_view()(
+                    self.request(self.inline_data())
+                )
+        self.assertFalse(Article.objects.exists())

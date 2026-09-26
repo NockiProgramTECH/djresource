@@ -664,3 +664,30 @@ python manage.py runserver
 cd demo
 python manage.py test
 ```
+
+## Business hooks and inline formsets
+
+Override `clean(instance, request)` to raise Django `ValidationError` and
+redisplay the form. `before_save(instance, request, is_new)` can assign an owner;
+`after_save(instance, request, is_new)` runs after the parent and M2M save.
+`before_delete(instance, request)` may raise `ValidationError` to veto deletion;
+`after_delete(instance, request)` runs only after deletion (the pk is then cleared).
+Defaults are no-ops. Inline saving follows `after_save`, in the same transaction;
+use `transaction.on_commit()` for external side effects.
+
+```python
+from django.forms import inlineformset_factory
+
+class NoteInline:
+    def get_formset_class(self, parent_model):
+        return inlineformset_factory(parent_model, Note, fields=["text"], extra=1)
+
+class ArticleWithNotesResource(Resource):
+    model = Article
+    fields = ["titre", "slug"]
+    inlines = [NoteInline()]  # Note has a ForeignKey to Article
+```
+
+Formsets are validated before any write and saved after the parent receives its
+pk. Each inline must have a distinct formset prefix. Built-in form templates
+render management fields and errors. Custom forms must render `inline_formsets`.

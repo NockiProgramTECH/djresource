@@ -16,9 +16,12 @@ The outermost "form_valid" (message) wraps the formset, which wraps the
 actual save (hooks). Each mixin calls super() to delegate to the next
 one; the order in the bases tuple IS the execution order (the first one
 listed runs first).
+For Delete: ResourceDeleteHooksMixin, ResourceDeleteMessageMixin,
+*permissions, DeleteView. The hook must reject deletion before success messaging.
 """
 from django.contrib import messages
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
@@ -197,7 +200,7 @@ class ResourceSaveHooksMixin:
 
     def form_valid(self, form):
         resource = self.resource
-        is_new = form.instance.pk is None
+        is_new = form.instance._state.adding
         instance = form.save(commit=False)
 
         try:
@@ -244,19 +247,24 @@ class ResourceInlineFormsetMixin:
     """
     Manages formsets declared via `Resource.inlines`: instantiation
     (GET), validation (POST), and saving AFTER the parent object is
-    saved (necessary: the related rows need the parent's `pk`, which
+    saved atomically with the parent (necessary: the related rows need the parent's `pk`, which
     only exists once the parent has been saved).
 
     Must be placed BEFORE `ResourceSaveHooksMixin` in the bases (so its
     `form_valid` runs first, and its `super().form_valid()` delegates
-    saving the parent to the next mixin).
+    saving the parent to the next mixin). Each inline must implement
+    get_formset_class(parent_model), returning a Django inline formset class.
+    Multiple formsets must have distinct default prefixes. Hooks run before
+    inline saving; external side effects should use transaction.on_commit.
     """
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if "inline_formsets" not in context:
             context["inline_formsets"] = self._build_formsets(
-                instance=getattr(self, "object", None), data=None, files=None
+                instance=getattr(self, "object", None),
+                data=self.request.POST if self.request.method == "POST" else None,
+                files=self.request.FILES if self.request.method == "POST" else None
             )
         return context
 
@@ -270,6 +278,7 @@ class ResourceInlineFormsetMixin:
                 formsets.append(formset_class(instance=instance))
         return formsets
 
+    @transaction.atomic
     def form_valid(self, form):
         if not self.resource.inlines:
             return super().form_valid(form)
@@ -277,7 +286,7 @@ class ResourceInlineFormsetMixin:
         formsets = self._build_formsets(
             instance=form.instance, data=self.request.POST, files=self.request.FILES
         )
-        if not all(fs.is_valid() for fs in formsets):
+        if not all([fs.is_valid() for fs in formsets]):
             return self.render_to_response(
                 self.get_context_data(form=form, inline_formsets=formsets)
             )
@@ -285,6 +294,11 @@ class ResourceInlineFormsetMixin:
         # Save the parent first (delegates to ResourceSaveHooksMixin,
         # which calls the before/after hooks): self.object has a pk after this.
         response = super().form_valid(form)
+
+        if not isinstance(response, HttpResponseRedirect):
+            return self.render_to_response(
+                self.get_context_data(form=form, inline_formsets=formsets)
+            )
 
         for formset in formsets:
             formset.instance = self.object
