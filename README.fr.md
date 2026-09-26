@@ -575,11 +575,28 @@ complètes de chaque thème.
    la modification, la suppression et les contextes injectés :
 
    ```python
-   def scope_queryset(self, queryset, request):
-       return queryset.filter(owner=request.user)
+   class ArticleScopedResource(Resource):
+       model = Article
+       fields = ["titre", "slug"]
+
+       def scope_queryset(self, queryset, request=None):
+           if request is None or not request.user.is_authenticated:
+               return queryset.none()
+           return queryset.filter(owner=request.user)
+
+       def before_save(self, instance, request, is_new):
+           if is_new:
+               instance.owner = request.user
    ```
 
-3. **Écriture interdite par défaut.** `fields = []` est la valeur par défaut.
+   Par défaut, `get_permissions()` retourne `[LoginRequiredMixin]` (ou `[]`
+   avec `public = True`). Une surcharge remplace cette politique : conservez
+   l’authentification dans vos mixins personnalisés. L’accès public inclut les
+   écritures. La connexion seule ne garantit ni les permissions modèle ni
+   l’isolation par propriétaire. Le scope ne filtre pas les choix FK/M2M des
+   formulaires : adaptez `get_form_class()` pour limiter les objets autorisés.
+
+3. **Aucun champ modifiable par défaut.** `fields = []` est la valeur par défaut.
    Listez explicitement les champs autorisés en écriture. La valeur historique
    `fields = "__all__"` reste supportée avec un `FieldsAllWarning` pour
    compatibilité, mais ne doit pas être utilisée avec des champs sensibles.
@@ -603,7 +620,7 @@ complètes de chaque thème.
 6. **Projet de démo (`demo/`) : ne pas utiliser tel quel en production**
    (`SECRET_KEY` codée en dur, `DEBUG = True`, `ALLOWED_HOSTS = ["*"]`).
 
-## Options de configuration disponibles (V1)
+## Options de configuration disponibles
 
 | Attribut | Rôle |
 |---|---|
@@ -623,6 +640,18 @@ complètes de chaque thème.
 | `template_list/detail/form/delete` | Surcharge d'un template précis |
 | `get_extra_context(view)` | Injecte des données métier dans le contexte de toutes les vues |
 | `get_list_context/get_form_context/get_detail_context` | Contexte calculé hors vue (affichage 100% custom) |
+| `htmx` | Rendu partiel avec HX-Request (False par défaut) |
+| `bulk_actions` | Actions nommées sur les lignes sélectionnées (vide par défaut) |
+| `get_bulk_actions(request)` | Surcharger les actions disponibles selon la requête |
+| `has_bulk_action_permission(action, request)` | Autorisation supplémentaire par action (permissions de liste toujours appliquées) |
+| `as_admin_class()` | Générer un ModelAdmin non enregistré partageant liste/recherche/filtres |
+| `as_viewset()` | Générer un ModelViewSet DRF optionnel ; enregistrement explicite sur un routeur |
+| `inlines` | Définitions inline ; liste vide par défaut |
+| `clean(instance, request)` | Valider avant sauvegarde ; lever ValidationError |
+| `before_save(instance, request, is_new)` | Modifier avant sauvegarde |
+| `after_save(instance, request, is_new)` | Réagir après parent/M2M, avant les inlines |
+| `before_delete(instance, request)` | Bloquer la suppression avec ValidationError |
+| `after_delete(instance, request)` | Réagir après suppression |
 | `public` | Active explicitement l'accès sans authentification |
 | `get_permissions()` | Mixins de permission supplémentaires (authentification par défaut) |
 | `scope_queryset(queryset, request)` / `get_queryset(request)` | Isolation des objets selon la requête |
@@ -662,6 +691,183 @@ python manage.py runserver
 ## Lancer les tests
 
 ```bash
-cd demo
-python manage.py test
+python runtests.py
 ```
+
+## Hooks métier et formsets inline
+
+Surchargez `clean(instance, request)` pour lever une `ValidationError` Django et
+réafficher le formulaire. `before_save(instance, request, is_new)` peut assigner
+le propriétaire ; `after_save(instance, request, is_new)` suit la sauvegarde du
+parent et des M2M. `before_delete(instance, request)` peut lever `ValidationError`
+pour bloquer la suppression ; `after_delete(instance, request)` ne s'exécute
+qu'après suppression (le pk est alors effacé). Par défaut, ces hooks ne font rien.
+Les inlines sont sauvegardés après `after_save`, dans la même transaction.
+Utilisez `transaction.on_commit()` pour les effets externes.
+
+```python
+from django.forms import inlineformset_factory
+
+class NoteInline:
+    def get_formset_class(self, parent_model):
+        return inlineformset_factory(parent_model, Note, fields=["text"], extra=1)
+
+class ArticleWithNotesResource(Resource):
+    model = Article
+    fields = ["titre", "slug"]
+    inlines = [NoteInline()]  # Note possède une ForeignKey vers Article
+```
+
+Les formsets sont validés avant toute écriture et sauvegardés après attribution
+du pk parent. Chaque inline doit avoir un préfixe de formset distinct. Les thèmes
+fournis affichent les champs de gestion et les erreurs. Les formulaires
+personnalisés doivent afficher `inline_formsets`.
+
+## Signaux Django
+
+```python
+from django.dispatch import receiver
+from djresource.signals import resource_post_save
+
+@receiver(resource_post_save, sender=Article)
+def article_saved(sender, instance, resource, **kwargs):
+    pass  # réagir sans hériter de Resource
+```
+
+`resource_pre_save` suit `before_save` ; `resource_post_save` suit `after_save`
+(parent/M2M sauvegardés, pas encore les inlines) ; `resource_post_delete` suit
+`after_delete` (pk effacé). Tous transmettent `instance` et `resource`, avec
+`sender=resource.model`. Un refus de validation n’émet rien. Les récepteurs sont
+synchrones, leurs exceptions se propagent ; utilisez `transaction.on_commit()`
+pour les effets externes. Les écritures ORM directes et opérations groupées
+n’émettent pas ces signaux.
+
+## HTMX (optionnel)
+
+Activez `htmx = True` sur la Resource. Les requêtes avec `HX-Request: true`
+affichent `list_partial`, `form_partial`, `detail_partial` ou
+`confirm_delete_partial` au lieu de la page complète (trois thèmes). Un formulaire
+invalide renvoie aussi un partiel ; une écriture réussie conserve sa redirection.
+Les autres requêtes restent inchangées. Permissions et CSRF restent appliqués,
+et les réponses varient selon `HX-Request`. Chargez HTMX vous-même ; par exemple,
+un bouton peut utiliser `hx-get="/articles/"` et `hx-target="#articles"`.
+La sélection des partiels suit le thème, pas les surcharges de page complète.
+Surchargez `get_template_names()` de la vue générée pour un partiel personnalisé.
+
+## Export CSV
+
+Ajoutez `?export=csv` à l’URL de liste générée, en conservant `q`, les filtres,
+`sort` et `dir` si nécessaire. L’export contient les colonnes `list_display` et
+**toutes** les lignes correspondantes, sans pagination. Il applique permissions
+et isolation de la liste, avec échappement CSV UTF-8 et nom de téléchargement.
+Les relations s’affichent comme dans le tableau HTML. Les chaînes ressemblant
+à des formules de tableur sont préfixées par `'` par sécurité. La réponse est
+construite en mémoire ; surchargez `export_csv(queryset)` sur la vue liste générée
+pour de très gros volumes ou un format différent.
+
+## Actions groupées (optionnelles)
+
+```python
+class ArchiveArticles:
+    name = "archive"
+    label = "Archiver les articles sélectionnés"
+
+    def run(self, queryset, request):
+        queryset.update(actif=False)
+
+class ArticleActionsResource(ArticleScopedResource):
+    bulk_actions = [ArchiveArticles()]
+
+    def has_bulk_action_permission(self, action, request):
+        return request.user.has_perm("articles.change_article")
+```
+
+Un dict avec `name`, `label` et un callable `run(queryset, request)` convient aussi.
+Les noms doivent être uniques. `bulk_actions = []` conserve l’affichage existant
+et refuse POST (405). Les trois thèmes et composants injectés affichent cases à
+cocher et sélecteur lorsque les actions sont autorisées. POST transmet
+`bulk_action` et les **clés primaires** répétées `selected`, même avec des URLs
+par slug. Le formulaire vise la liste générée et conserve recherche, filtres et tri.
+
+Les permissions de liste passent en premier ; `has_bulk_action_permission()`
+ajoute un contrôle par action (défaut : autoriser les utilisateurs de la liste,
+**anonymes inclus pour une ressource publique**). Tous les objets sélectionnés
+doivent appartenir au queryset filtré et isolé. Un objet absent/étranger fait
+refuser toute l’opération (403) ; sélection mal formée/vide ou action inconnue :
+400. L’action est transactionnelle ; une `ValidationError` Django annule les
+écritures et affiche une erreur. Le queryset sélectionné n’est pas paginé.
+
+`get_bulk_actions(request)` permet des actions selon la requête. Les permissions
+supplémentaires par objet appartiennent à `run()`. Les écritures ORM groupées
+contournent hooks et signaux Resource : implémentez cette logique explicitement
+si nécessaire. Utilisez `transaction.on_commit` pour les effets externes. Les
+lignes ne sont pas verrouillées contre les changements concurrents de scope.
+Le middleware CSRF doit rester activé dans le projet hôte.
+
+## Bridge Django admin
+
+```python
+from django.contrib import admin
+
+admin.site.register(Article, ArticleResource().as_admin_class())
+```
+
+`as_admin_class()` retourne une sous-classe `ModelAdmin` non enregistrée, avec
+copies de `list_display`, `search_fields` et `list_filter`. Elle peut être
+surchargée avant enregistrement. Les permissions staff/modèle de l’admin restent
+inchangées ; `public`, scope propriétaire, formulaires, hooks et inlines Resource
+ne sont **pas** transférés. Ajoutez l’isolation et les règles métier propres à
+l’admin dans la sous-classe. Les valeurs doivent respecter les vérifications
+Django admin (par exemple, colonnes M2M directes non prises en charge).
+
+## API REST optionnelle (Django REST Framework)
+
+DRF n’est **pas requis** pour le CRUD HTML. Installez `pip install 'djresource[api]'`
+(ou `pip install -e '.[api]'` dans le dépôt), puis enregistrez explicitement le viewset :
+
+```python
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+router = DefaultRouter()
+router.register("articles", ArticleScopedResource().as_viewset(), basename="api-article")
+urlpatterns = [path("api/", include(router.urls))]
+```
+
+Utilisez une `ArticleScopedResource` authentifiée comme dans l’exemple sécurité.
+`as_viewset()` génère à la demande un `ModelViewSet` standard surchargeable et un
+`ModelSerializer`. Sans DRF, seul l’appel de cette méthode lève une erreur
+`ImproperlyConfigured` explicative ; imports et vues HTML restent fonctionnels.
+
+- Seuls les `fields` sont sérialisés ; aucun `id`, propriétaire ou champ sensible
+  implicite n’est ajouté. Déclarez les identifiants souhaités dans les réponses.
+  `readonly_fields` est respecté. `"__all__"` reste accepté avec son avertissement.
+- Lecture/modification/suppression utilisent `get_queryset(request)` et
+  `scope_queryset()`, avec `lookup_field` / `lookup_url_kwarg` (URLs par slug, etc.).
+- Conventions DRF : `?search=riz&ordering=-titre&page=2`, avec réutilisation de
+  `search_fields`, `ordering_fields`, `list_filter` et `paginate_by`. Ces paramètres
+  diffèrent de `q`, `sort` et `dir` de la liste HTML.
+- Les réglages d’authentification DRF du projet s’appliquent. Un adaptateur DRF
+  exécute la chaîne de mixins Django de `get_permissions()` avec la requête DRF
+  authentifiée : connexion par défaut, `public = True`, `PermissionRequiredMixin`,
+  `UserPassesTestMixin` et contrôles personnalisés coopératifs dans dispatch.
+  Refus et redirections deviennent un refus API, jamais une page de connexion.
+  Les mixins doivent appeler `super().dispatch()` pour autoriser l’accès. La
+  sonde expose request, kwargs, resource, action, get_queryset/get_object et les
+  attributs de permission, pas les méthodes de formulaire/contexte HTML.
+  Remplacer `permission_classes` sur une sous-classe remplace cette politique.
+- Création/modification/suppression exécutent hooks et signaux atomiquement, M2M
+  inclus. `before_save` assigne donc aussi le propriétaire lors d’une création
+  API. Une `ValidationError` Django dans un hook devient HTTP 400. Utilisez
+  `transaction.on_commit()` pour les effets externes. Les hooks reçoivent une
+  `Request` DRF.
+
+**Limites :** la validation du serializer remplace celle du ModelForm, sans
+appel automatique de `model.full_clean()`. ModelForms personnalisés, inlines,
+écritures imbriquées, widgets, CSV et actions groupées ne sont pas transférés.
+Les choix FK/M2M ne sont pas automatiquement isolés par tenant : surchargez le
+serializer généré pour filtrer leurs querysets. Conservez les hooks nécessaires
+si vous remplacez create/update du serializer ou les méthodes perform du viewset.
+Aucune URL n’est publiée avant votre enregistrement explicite. Configurez
+l’authentification, la limitation de débit et la protection CSRF des sessions DRF
+selon les besoins du projet.

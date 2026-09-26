@@ -12,13 +12,21 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.11", "3.12"]
-        django-version: ["4.2", "5.0", "5.1"]
+        django-version: ["4.2", "5.0", "5.1", "5.2", "6.0"]
         exclude:
           # Django 5.x exige Python >= 3.10
           - python-version: "3.9"
             django-version: "5.0"
           - python-version: "3.9"
             django-version: "5.1"
+          - python-version: "3.9"
+            django-version: "5.2"
+          # https://docs.djangoproject.com/en/6.0/releases/6.0/#python-compatibility
+          # Django 6.0 exige Python >= 3.12.
+          - python-version: "3.9"
+            django-version: "6.0"
+          - python-version: "3.11"
+            django-version: "6.0"
     steps:
       - uses: actions/checkout@v4
 
@@ -33,4 +41,30 @@ jobs:
           pip install "Django==${{ matrix.django-version }}.*"
 
       - name: Lancer les tests
+        run: python runtests.py
+
+  api:
+    name: Optional DRF / Python ${{ matrix.python }} / Django ${{ matrix.django }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.9"
+            django: "4.2"
+            drf: "3.15"
+          - python: "3.11"
+            django: "5.2"
+            drf: "3.18"
+          - python: "3.12"
+            django: "6.0"
+            drf: "3.18"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Installer Django et DRF optionnel
+        run: pip install "Django==${{ matrix.django }}.*" "djangorestframework==${{ matrix.drf }}.*"
+      - name: Lancer tous les tests avec DRF
         run: python runtests.py

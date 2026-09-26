@@ -17,6 +17,8 @@
     </div>
     {% endfor %}
 
+    {% include "djresource/_inlines.html" %}
+
     <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Enregistrer</button>
     {% if url_list %}<a href="{% url url_list %}" class="ml-2 text-gray-600 hover:underline">Annuler</a>{% endif %}
 </form>

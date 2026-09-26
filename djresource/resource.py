@@ -84,9 +84,13 @@ from .mixins import (
     ResourceContextMixin,
     ResourceCreateMessageMixin,
     ResourceDeleteMessageMixin,
+    ResourceDeleteHooksMixin,
+    ResourceSaveHooksMixin,
+    ResourceInlineFormsetMixin,
     ResourceFilterMixin,
     ResourceFormActionMixin,
     ResourceListContextMixin,
+    ResourceBulkActionsMixin,
     ResourceLookupMixin,
     ResourceOrderingMixin,
     ResourceQuerysetMixin,
@@ -137,6 +141,9 @@ class Resource:
     model = None
     fields = []
     public = False
+    inlines: list = []
+    htmx = False
+    bulk_actions: list = []
     readonly_fields: list = []
     list_display: list | None = None
     search_fields: list = []
@@ -168,6 +175,29 @@ class Resource:
     success_message_create = "%(name)s créé avec succès."
     success_message_update = "%(name)s modifié avec succès."
     success_message_delete = "%(name)s supprimé avec succès."
+
+    def clean(self, instance, request):
+        """Validate before saving; raise ValidationError to reject the form."""
+        pass
+
+    def before_save(self, instance, request, is_new):
+        """Modify the instance immediately before saving (no database write yet)."""
+        pass
+
+    def after_save(self, instance, request, is_new):
+        """React after parent and M2M saving, before inlines; pk is available.
+
+        For external side effects use transaction.on_commit when appropriate.
+        """
+        pass
+
+    def before_delete(self, instance, request):
+        """Raise ValidationError to prevent deletion."""
+        pass
+
+    def after_delete(self, instance, request):
+        """React after deletion; Django has cleared instance.pk."""
+        pass
 
     def __init__(self):
         if self.model is None:
@@ -516,6 +546,52 @@ class Resource:
             attrs["test_func"] = lambda view: self.test_func(view.request)
         return attrs
 
+    def get_bulk_actions(self, request):
+        """Return validated action dicts; override for request-specific actions.
+
+        Accepts objects or dicts with unique nonempty name, label, callable run.
+        Returning an action only registers it; has_bulk_action_permission is
+        checked independently before execution. Never mutate shared class lists.
+        """
+        from django.core.exceptions import ImproperlyConfigured
+
+        actions = []
+        names = set()
+        for action in self.bulk_actions:
+            get = action.get if isinstance(action, dict) else lambda key: getattr(action, key, None)
+            name, label, run = get("name"), get("label"), get("run")
+            if not isinstance(name, str) or not name or name in names or not label or not callable(run):
+                raise ImproperlyConfigured("Bulk actions need unique names, labels and callable run(queryset, request).")
+            names.add(name)
+            actions.append({"name": name, "label": label, "run": run})
+        return actions
+
+    def has_bulk_action_permission(self, action, request):
+        """Additional action authorization, after normal list permissions.
+
+        Defaults to True: registering an action enables it for every user allowed
+        to access the list (including anonymous users on public resources).
+        Override for model/business permissions. Per-object checks, if needed,
+        belong in run(); its queryset is already scoped and filtered.
+        """
+        return True
+
+    def get_bulk_context(self, request):
+        """Controls shared by generated lists and injected components.
+
+        POST always targets the generated list, retaining the current query
+        parameters. Actions receive primary keys, independently of lookup_field.
+        """
+        actions = [
+            {"name": action["name"], "label": action["label"]}
+            for action in self.get_bulk_actions(request)
+            if self.has_bulk_action_permission(action, request)
+        ]
+        url = self.get_success_url_list() if actions else ""
+        if actions and request is not None and request.GET:
+            url += "?" + request.GET.urlencode()
+        return {"bulk_actions": actions, "bulk_action_url": url}
+
     # ------------------------------------------------------------------
     # Route names
     # ------------------------------------------------------------------
@@ -568,6 +644,7 @@ class Resource:
         page_obj = paginator.get_page(page_number)
 
         context = self._base_url_context()
+        context.update(self.get_bulk_context(request))
         context.update({
             "object_list": page_obj.object_list,
             "list_display": self.list_display,
@@ -607,6 +684,10 @@ class Resource:
         context = self._base_url_context()
         context.update({
             "form": form,
+            "inline_formsets": [
+                inline.get_formset_class(self.model)(instance=instance)
+                for inline in self.inlines
+            ],
             "object": instance,
             "form_action_url": (
                 reverse(self.url_name("update"), args=[self.get_lookup_value(instance)])
@@ -637,6 +718,7 @@ class Resource:
         resource = self
         bases = (
             ResourceListContextMixin,
+            ResourceBulkActionsMixin,
             ResourceSearchMixin,
             ResourceOrderingMixin,
             ResourceFilterMixin,
@@ -647,6 +729,7 @@ class Resource:
         attrs = {
             **self._permission_view_attrs(),
             "model": self.model,
+            "partial_template_kind": "list_partial",
             "template_name": self._theme_template("list", self.template_list),
             "paginate_by": self.paginate_by,
             "context_object_name": "object_list",
@@ -667,6 +750,7 @@ class Resource:
         attrs = {
             **self._permission_view_attrs(),
             "model": self.model,
+            "partial_template_kind": "detail_partial",
             "template_name": self._theme_template("detail", self.template_detail),
             "context_object_name": "object",
         }
@@ -678,6 +762,8 @@ class Resource:
             ResourceContextMixin,
             ResourceFormActionMixin,
             ResourceCreateMessageMixin,
+            ResourceInlineFormsetMixin,
+            ResourceSaveHooksMixin,
             *self.get_permissions(),
             ResourceQuerysetMixin,
             CreateView,
@@ -686,6 +772,7 @@ class Resource:
             **self._permission_view_attrs(),
             "model": self.model,
             "form_class": self.get_form_class(),
+            "partial_template_kind": "form_partial",
             "template_name": self._theme_template("form", self.template_form),
             "get_success_url": lambda self_view: resource.get_success_url_list(),
         }
@@ -698,6 +785,8 @@ class Resource:
             ResourceFormActionMixin,
             ResourceLookupMixin,
             ResourceUpdateMessageMixin,
+            ResourceInlineFormsetMixin,
+            ResourceSaveHooksMixin,
             *self.get_permissions(),
             ResourceQuerysetMixin,
             UpdateView,
@@ -706,6 +795,7 @@ class Resource:
             **self._permission_view_attrs(),
             "model": self.model,
             "form_class": self.get_form_class(),
+            "partial_template_kind": "form_partial",
             "template_name": self._theme_template("form", self.template_form),
             "get_success_url": lambda self_view: resource.get_success_url_list(),
         }
@@ -716,6 +806,7 @@ class Resource:
         bases = (
             ResourceContextMixin,
             ResourceLookupMixin,
+            ResourceDeleteHooksMixin,
             ResourceDeleteMessageMixin,
             *self.get_permissions(),
             ResourceQuerysetMixin,
@@ -724,10 +815,44 @@ class Resource:
         attrs = {
             **self._permission_view_attrs(),
             "model": self.model,
+            "partial_template_kind": "confirm_delete_partial",
             "template_name": self._theme_template("confirm_delete", self.template_delete),
             "get_success_url": lambda self_view: resource.get_success_url_list(),
         }
         return type(f"{self.name.title()}DeleteView", bases, attrs)
+
+    def as_viewset(self):
+        """Generate a DRF ModelViewSet lazily; DRF is an optional dependency.
+
+        Register on a DRF router with an explicit basename. Reuses fields,
+        readonly_fields, scoped queryset, permission mixins, lookup, search,
+        ordering, filters, pagination and business hooks/signals. HTML inlines,
+        custom forms, widgets, CSV and bulk actions are not bridged. Related
+        FK/M2M authorization requires a custom serializer. See api.build_viewset
+        for query conventions, permission-probe limits and validation behavior.
+        """
+        from .api import build_viewset
+
+        return build_viewset(self)
+
+    def as_admin_class(self):
+        """Generate an unregistered ModelAdmin sharing list/search/filter options.
+
+        Configuration is copied so later Resource mutations do not change the
+        admin class. Only options supported by Django admin may be used (e.g.
+        list_display does not support direct M2M fields). Admin's staff/model
+        permissions remain in force; public, scope_queryset, forms, hooks and
+        inlines are NOT transferred. Subclass the result to add admin-specific
+        object isolation and business rules before registering it.
+        """
+        from django.contrib.admin import ModelAdmin
+
+        return type(f"{self.model.__name__}ResourceAdmin", (ModelAdmin,), {
+            "__module__": self.__class__.__module__,
+            "list_display": tuple(self.list_display),
+            "search_fields": tuple(self.search_fields),
+            "list_filter": tuple(self.list_filter),
+        })
 
     # ------------------------------------------------------------------
     # Routes

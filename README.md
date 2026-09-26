@@ -574,11 +574,28 @@ pages of each theme.
    for list, detail, update, delete, and all injected contexts:
 
    ```python
-   def scope_queryset(self, queryset, request):
-       return queryset.filter(owner=request.user)
+   class ArticleScopedResource(Resource):
+       model = Article
+       fields = ["titre", "slug"]
+
+       def scope_queryset(self, queryset, request=None):
+           if request is None or not request.user.is_authenticated:
+               return queryset.none()
+           return queryset.filter(owner=request.user)
+
+       def before_save(self, instance, request, is_new):
+           if is_new:
+               instance.owner = request.user
    ```
 
-3. **Writing is deny-by-default.** `fields = []` is the default. Explicitly
+   The default `get_permissions()` returns `[LoginRequiredMixin]` (or `[]`
+   when `public = True`). Overriding it replaces that policy: keep authentication
+   in your custom mixins. Public access includes writes, not just reads.
+   Authentication alone does not grant model-level or owner-level isolation.
+   Scope does not restrict form relation choices; customize `get_form_class()`
+   to restrict writable FK/M2M choices to authorized objects.
+
+3. **No writable fields by default.** `fields = []` is the default. Explicitly
    list the fields allowed for writing. The legacy `fields = "__all__"` value
    remains supported with a `FieldsAllWarning` for compatibility, but should
    not be used for sensitive models.
@@ -602,7 +619,7 @@ pages of each theme.
 6. **Demo project (`demo/`): do not use as is in production**
    (`SECRET_KEY` hard-coded, `DEBUG = True`, `ALLOWED_HOSTS = ["*"]`).
 
-## Available configuration options (V1)
+## Available configuration options
 
 | Attribute | Role |
 |---|---|
@@ -622,6 +639,18 @@ pages of each theme.
 | `template_list/detail/form/delete` | Override for a specific template |
 | `get_extra_context(view)` | Injects business data into the context of all views |
 | `get_list_context/get_form_context/get_detail_context` | Context computed outside the view (100% custom display) |
+| `htmx` | Opt-in HX-Request partial rendering (False by default) |
+| `bulk_actions` | Optional named actions on selected list rows (empty by default) |
+| `get_bulk_actions(request)` | Override the available action registry per request |
+| `has_bulk_action_permission(action, request)` | Additional action authorization (list permissions always apply) |
+| `as_admin_class()` | Generate an unregistered ModelAdmin sharing list/search/filter options |
+| `as_viewset()` | Generate an optional DRF ModelViewSet; explicit router registration required |
+| `inlines` | Inline definitions; empty by default |
+| `clean(instance, request)` | Validate before saving; raise ValidationError |
+| `before_save(instance, request, is_new)` | Modify before saving |
+| `after_save(instance, request, is_new)` | React after parent/M2M saving, before inlines |
+| `before_delete(instance, request)` | Veto deletion with ValidationError |
+| `after_delete(instance, request)` | React after deletion |
 | `public` | Explicitly opt a resource out of default authentication |
 | `get_permissions()` | Additional permission mixins; default is `LoginRequiredMixin` |
 | `scope_queryset(queryset, request)` / `get_queryset(request)` | Request-aware object isolation |
@@ -661,6 +690,174 @@ python manage.py runserver
 ## Running the tests
 
 ```bash
-cd demo
-python manage.py test
+python runtests.py
 ```
+
+## Business hooks and inline formsets
+
+Override `clean(instance, request)` to raise Django `ValidationError` and
+redisplay the form. `before_save(instance, request, is_new)` can assign an owner;
+`after_save(instance, request, is_new)` runs after the parent and M2M save.
+`before_delete(instance, request)` may raise `ValidationError` to veto deletion;
+`after_delete(instance, request)` runs only after deletion (the pk is then cleared).
+Defaults are no-ops. Inline saving follows `after_save`, in the same transaction;
+use `transaction.on_commit()` for external side effects.
+
+```python
+from django.forms import inlineformset_factory
+
+class NoteInline:
+    def get_formset_class(self, parent_model):
+        return inlineformset_factory(parent_model, Note, fields=["text"], extra=1)
+
+class ArticleWithNotesResource(Resource):
+    model = Article
+    fields = ["titre", "slug"]
+    inlines = [NoteInline()]  # Note has a ForeignKey to Article
+```
+
+Formsets are validated before any write and saved after the parent receives its
+pk. Each inline must have a distinct formset prefix. Built-in form templates
+render management fields and errors. Custom forms must render `inline_formsets`.
+
+## Django signals
+
+```python
+from django.dispatch import receiver
+from djresource.signals import resource_post_save
+
+@receiver(resource_post_save, sender=Article)
+def article_saved(sender, instance, resource, **kwargs):
+    pass  # react without subclassing Resource
+```
+
+`resource_pre_save` follows `before_save`; `resource_post_save` follows
+`after_save` (parent/M2M saved, inlines not yet saved); `resource_post_delete`
+follows `after_delete` (pk cleared). All pass `instance` and `resource`, with
+`sender=resource.model`. Validation vetoes emit nothing. Receivers run
+synchronously, exceptions propagate; use `transaction.on_commit()` for external
+effects. Direct ORM writes and bulk operations do not emit these signals.
+
+## HTMX (opt-in)
+
+Set `htmx = True` on the Resource. Requests with `HX-Request: true` render
+`list_partial`, `form_partial`, `detail_partial`, or `confirm_delete_partial`
+instead of the complete page (all three themes). Invalid submissions also return
+a partial; successful writes keep their normal redirect. Other requests are
+unchanged. Permissions and CSRF remain enforced, and responses vary on
+`HX-Request`. Include HTMX yourself, e.g. use `hx-get="/articles/"`
+with `hx-target="#articles"` on a button. Partial selection uses the theme;
+full-page template overrides are not reused as partials. Override the generated
+view's `get_template_names()` for a custom partial.
+
+## CSV export
+
+Append `?export=csv` to the generated list URL, retaining `q`, filter fields,
+`sort` and `dir` as needed. The export contains `list_display` columns and **all**
+matching rows, ignoring pagination. It uses the list's permissions and owner
+scope, with UTF-8 CSV quoting and a download filename. Relations are displayed
+as in the HTML table. Spreadsheet formula-like strings are prefixed with `'`
+for safety. The response is buffered in memory; override `export_csv(queryset)`
+on the generated list view for very large datasets or a different format.
+
+## Bulk actions (opt-in)
+
+```python
+class ArchiveArticles:
+    name = "archive"
+    label = "Archive selected articles"
+
+    def run(self, queryset, request):
+        queryset.update(actif=False)
+
+class ArticleActionsResource(ArticleScopedResource):
+    bulk_actions = [ArchiveArticles()]
+
+    def has_bulk_action_permission(self, action, request):
+        return request.user.has_perm("articles.change_article")
+```
+
+A dict with `name`, `label`, and a callable `run(queryset, request)` also works.
+Names must be unique. `bulk_actions = []` preserves the existing list appearance
+and rejects POST (405). All three themes and injected list components show
+checkboxes and an action selector when actions are authorized. POST submits
+`bulk_action` and repeated `selected` **primary keys**, even for slug-based URLs.
+The form targets the generated list URL and retains search/filter/sort parameters.
+
+List permissions run first; `has_bulk_action_permission()` adds per-action checks
+(default: allow list users, **including anonymous users for public resources**).
+Every selected object must be in the scoped, filtered queryset. Missing/foreign
+objects reject the entire operation (403), malformed/empty selections or unknown
+actions return 400. Actions run in a transaction; Django `ValidationError` rolls
+back writes and displays an error. The selected queryset is not paginated.
+
+`get_bulk_actions(request)` can supply request-specific actions. Put any extra
+per-object authorization in `run()`. ORM bulk writes bypass Resource hooks and
+signals, so implement that logic explicitly if needed. Use `transaction.on_commit`
+for external effects. Rows are not locked against concurrent scope changes.
+CSRF middleware must remain enabled in the host project.
+
+## Django admin bridge
+
+```python
+from django.contrib import admin
+
+admin.site.register(Article, ArticleResource().as_admin_class())
+```
+
+`as_admin_class()` returns an unregistered `ModelAdmin` subclass with copied
+`list_display`, `search_fields`, and `list_filter`. You can subclass it before
+registration. Django admin's staff/model permissions remain unchanged; Resource
+`public`, owner scope, forms, hooks, and inlines are **not** transferred. Add
+admin-specific isolation/business rules in that subclass. Values must satisfy
+Django admin's checks (for example, direct M2M list columns are not supported).
+
+## Optional REST API (Django REST Framework)
+
+DRF is **not required** for HTML CRUD. Install `pip install 'djresource[api]'`
+(or `pip install -e '.[api]'` in a checkout), then explicitly register a viewset:
+
+```python
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+router = DefaultRouter()
+router.register("articles", ArticleScopedResource().as_viewset(), basename="api-article")
+urlpatterns = [path("api/", include(router.urls))]
+```
+
+Use an authenticated `ArticleScopedResource` as in the security example.
+`as_viewset()` lazily generates an ordinary, subclassable `ModelViewSet` with a
+`ModelSerializer`. Missing DRF raises an explanatory `ImproperlyConfigured` only
+when this method is called; importing djresource or using HTML views still works.
+
+- Only `fields` are serialized; no implicit `id`, owner or sensitive fields are
+  added. Declare identifiers if you want them in responses. `readonly_fields`
+  are respected. Legacy `"__all__"` remains supported with its exposure warning.
+- All reads/updates/deletes use `get_queryset(request)` and `scope_queryset()`;
+  the API also respects `lookup_field` / `lookup_url_kwarg` (e.g. slug URLs).
+- DRF query conventions apply: `?search=rice&ordering=-titre&page=2`, with
+  `search_fields`, `ordering_fields`, `list_filter`, and `paginate_by` reused.
+  These differ from the HTML list's `q`, `sort`, and `dir` parameters.
+- Project DRF authentication settings apply. A DRF permission adapter executes
+  `get_permissions()`'s Django mixin chain using the authenticated DRF request:
+  default login protection, explicit `public = True`, `PermissionRequiredMixin`,
+  `UserPassesTestMixin`, and cooperative custom dispatch checks. A denial or
+  redirect becomes an API denial, never a login-page redirect. Custom mixins
+  must delegate to `super().dispatch()` to grant access. The probe exposes
+  request, kwargs, resource, action, get_queryset/get_object and permission
+  attributes, not HTML form/context methods. Replacing `permission_classes`
+  on a subclass deliberately replaces this policy.
+- Create/update/delete run hooks and signals, atomically including M2M writes.
+  This means `before_save` still assigns an owner on API creation. Django
+  `ValidationError` from hooks becomes HTTP 400; use `transaction.on_commit()`
+  for external effects. Hooks receive a DRF `Request`.
+
+**Limits:** serializer validation replaces ModelForm validation and does not
+call `model.full_clean()` automatically. Custom ModelForms, inline formsets,
+nested writes, widgets, CSV and bulk actions are not bridged. FK/M2M choices
+are not automatically tenant-scoped: subclass the generated serializer to
+restrict relation querysets. Keep required hooks if you replace the serializer's
+create/update methods or the viewset's perform methods. No URLs are published
+until you register the generated class yourself. Set up DRF authentication,
+throttling and session CSRF protection as appropriate for your project.

@@ -27,6 +27,8 @@
     </div>
     {% endfor %}
 
+    {% include "djresource/_inlines.html" %}
+
     <button type="submit" class="btn btn-primary">Enregistrer</button>
     {% if url_list %}<a href="{% url url_list %}" class="btn btn-outline-secondary">Annuler</a>{% endif %}
 </form>

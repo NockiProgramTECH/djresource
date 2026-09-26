@@ -16,19 +16,48 @@ The outermost "form_valid" (message) wraps the formset, which wraps the
 actual save (hooks). Each mixin calls super() to delegate to the next
 one; the order in the bases tuple IS the execution order (the first one
 listed runs first).
+For Delete: ResourceDeleteHooksMixin, ResourceDeleteMessageMixin,
+*permissions, DeleteView. The hook must reject deletion before success messaging.
 """
+import csv
+
 from django.contrib import messages
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Q
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotAllowed, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
+
+from .signals import resource_pre_save, resource_post_save, resource_post_delete
 
 
 # ---------------------------------------------------------------------
 # Common context (all generated views)
 # ---------------------------------------------------------------------
-class ResourceContextMixin:
+class ResourceHTMXMixin:
+    """Opt-in partial template selection, without changing successful redirects.
+
+    HTMX's client script is not bundled. Partial templates use the resource
+    theme, not template_list/form/detail/delete overrides; override
+    get_template_names() in a generated subclass for custom partials.
+    Vary protects full/partial representations in shared caches.
+    """
+
+    def get_template_names(self):
+        if self.resource.htmx and self.request.headers.get("HX-Request") == "true":
+            return [self.resource._theme_template(self.partial_template_kind, None)]
+        return super().get_template_names()
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        if self.resource.htmx:
+            patch_vary_headers(response, ["HX-Request"])
+        return response
+
+
+class ResourceContextMixin(ResourceHTMXMixin):
     """
     Injects the resource, useful route names, and additional business
     context (via `Resource.get_extra_context()`) into the template
@@ -54,12 +83,87 @@ class ResourceContextMixin:
 
 
 class ResourceListContextMixin(ResourceContextMixin):
-    """Adds the columns to display (list_display) to the list context."""
+    """List columns and CSV export of the full scoped, filtered, sorted queryset.
+
+    Export is buffered in memory (not intended for huge datasets). Values use
+    the same attribute/relation resolver as templates. String cells beginning
+    with spreadsheet formula markers are prefixed with an apostrophe; this
+    deliberately changes their raw representation to prevent formula injection.
+    Normal dispatch permissions run before get(), including for exports.
+    """
+
+    def get(self, request, *args, **kwargs):
+        if request.GET.get("export") == "csv":
+            return self.export_csv(self.get_queryset())
+        return super().get(request, *args, **kwargs)
+
+    def export_csv(self, queryset):
+        """Export all list_display columns, without applying pagination."""
+        from .templatetags.djresource_tags import get_attr
+
+        def safe_cell(value):
+            if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
+                return "'" + value
+            return value
+
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{self.resource.name}.csv"'
+        writer = csv.writer(response)
+        writer.writerow([safe_cell(field) for field in self.resource.list_display])
+        for obj in queryset:
+            writer.writerow([safe_cell(get_attr(obj, field)) for field in self.resource.list_display])
+        return response
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["list_display"] = self.resource.list_display
+        context.update(self.resource.get_bulk_context(self.request))
         return context
+
+
+class ResourceBulkActionsMixin:
+    """Optional POST actions, after the list's normal dispatch permissions.
+
+    Selection is an explicit nonempty list of primary keys. Every selected row
+    must belong to the scoped, searched, filtered queryset; forged/missing rows
+    reject the entire operation. Actions run atomically on the selected queryset
+    (not on the paginated page). ValidationError rolls back and becomes a message.
+    ORM bulk writes do not call Resource hooks/signals; run() must implement any
+    required per-object logic. Use on_commit() for external side effects. This
+    does not lock rows against concurrent scope/permission changes.
+    """
+
+    def post(self, request, *args, **kwargs):
+        resource = self.resource
+        actions = resource.get_bulk_actions(request)
+        if not actions:
+            return HttpResponseNotAllowed(["GET", "HEAD", "OPTIONS"])
+        action = next((a for a in actions if a["name"] == request.POST.get("bulk_action")), None)
+        if action is None:
+            return HttpResponseBadRequest("Unknown bulk action.")
+        if not resource.has_bulk_action_permission(action, request):
+            raise PermissionDenied("Bulk action not permitted.")
+        selected = request.POST.getlist("selected")
+        if not selected:
+            return HttpResponseBadRequest("Select at least one object.")
+        try:
+            selected = {resource.model._meta.pk.to_python(value) for value in selected}
+        except (DjangoValidationError, ValueError, TypeError, OverflowError):
+            return HttpResponseBadRequest("Invalid selection.")
+        try:
+            with transaction.atomic():
+                queryset = self.get_queryset().filter(pk__in=selected)
+                if set(queryset.values_list("pk", flat=True)) != selected:
+                    raise PermissionDenied("Selection is outside the available queryset.")
+                action["run"](queryset, request)
+        except DjangoValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, str(action["label"]))
+        url = resource.get_success_url_list()
+        if request.GET:
+            url += "?" + request.GET.urlencode()
+        return HttpResponseRedirect(url)
 
 
 class ResourceQuerysetMixin:
@@ -197,7 +301,7 @@ class ResourceSaveHooksMixin:
 
     def form_valid(self, form):
         resource = self.resource
-        is_new = form.instance.pk is None
+        is_new = form.instance._state.adding
         instance = form.save(commit=False)
 
         try:
@@ -207,10 +311,12 @@ class ResourceSaveHooksMixin:
             return self.form_invalid(form)
 
         resource.before_save(instance, self.request, is_new)
+        resource_pre_save.send(sender=resource.model, instance=instance, resource=resource)
         instance.save()
         if hasattr(form, "save_m2m"):
             form.save_m2m()
         resource.after_save(instance, self.request, is_new)
+        resource_post_save.send(sender=resource.model, instance=instance, resource=resource)
 
         self.object = instance
         return HttpResponseRedirect(self.get_success_url())
@@ -234,6 +340,7 @@ class ResourceDeleteHooksMixin:
 
         response = super().form_valid(form)  # performs the actual deletion (Django)
         resource.after_delete(instance, self.request)
+        resource_post_delete.send(sender=resource.model, instance=instance, resource=resource)
         return response
 
 
@@ -244,19 +351,24 @@ class ResourceInlineFormsetMixin:
     """
     Manages formsets declared via `Resource.inlines`: instantiation
     (GET), validation (POST), and saving AFTER the parent object is
-    saved (necessary: the related rows need the parent's `pk`, which
+    saved atomically with the parent (necessary: the related rows need the parent's `pk`, which
     only exists once the parent has been saved).
 
     Must be placed BEFORE `ResourceSaveHooksMixin` in the bases (so its
     `form_valid` runs first, and its `super().form_valid()` delegates
-    saving the parent to the next mixin).
+    saving the parent to the next mixin). Each inline must implement
+    get_formset_class(parent_model), returning a Django inline formset class.
+    Multiple formsets must have distinct default prefixes. Hooks run before
+    inline saving; external side effects should use transaction.on_commit.
     """
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if "inline_formsets" not in context:
             context["inline_formsets"] = self._build_formsets(
-                instance=getattr(self, "object", None), data=None, files=None
+                instance=getattr(self, "object", None),
+                data=self.request.POST if self.request.method == "POST" else None,
+                files=self.request.FILES if self.request.method == "POST" else None
             )
         return context
 
@@ -270,6 +382,7 @@ class ResourceInlineFormsetMixin:
                 formsets.append(formset_class(instance=instance))
         return formsets
 
+    @transaction.atomic
     def form_valid(self, form):
         if not self.resource.inlines:
             return super().form_valid(form)
@@ -277,7 +390,7 @@ class ResourceInlineFormsetMixin:
         formsets = self._build_formsets(
             instance=form.instance, data=self.request.POST, files=self.request.FILES
         )
-        if not all(fs.is_valid() for fs in formsets):
+        if not all([fs.is_valid() for fs in formsets]):
             return self.render_to_response(
                 self.get_context_data(form=form, inline_formsets=formsets)
             )
@@ -285,6 +398,11 @@ class ResourceInlineFormsetMixin:
         # Save the parent first (delegates to ResourceSaveHooksMixin,
         # which calls the before/after hooks): self.object has a pk after this.
         response = super().form_valid(form)
+
+        if not isinstance(response, HttpResponseRedirect):
+            return self.render_to_response(
+                self.get_context_data(form=form, inline_formsets=formsets)
+            )
 
         for formset in formsets:
             formset.instance = self.object

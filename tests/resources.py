@@ -58,3 +58,15 @@ class ArticleBusinessProtectedResource(ArticleResource):
 
     def test_func(self, request):
         return request.user.username == "allowed"
+
+
+class ArticleNoteInline:
+    def get_formset_class(self, parent_model):
+        from django.forms import inlineformset_factory
+        from .models import ArticleNote
+
+        return inlineformset_factory(parent_model, ArticleNote, fields=["text"], extra=1)
+
+
+class ArticleInlineResource(ArticleScopedResource):
+    inlines = [ArticleNoteInline()]
