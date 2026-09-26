@@ -1,0 +1,8 @@
+<label>
+    Action
+    <select name="bulk_action" required class="{% if resource.theme == 'bootstrap' %}form-select{% elif resource.theme == 'tailwind' %}border rounded px-3 py-2{% else %}djr-input{% endif %}">
+        <option value="">---------</option>
+        {% for action in bulk_actions %}<option value="{{ action.name }}">{{ action.label }}</option>{% endfor %}
+    </select>
+</label>
+<button type="submit" class="{% if resource.theme == 'bootstrap' %}btn btn-primary{% elif resource.theme == 'tailwind' %}bg-blue-600 text-white px-4 py-2 rounded{% else %}djr-btn{% endif %}">Appliquer</button>

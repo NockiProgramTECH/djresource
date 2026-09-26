@@ -22,10 +22,10 @@ For Delete: ResourceDeleteHooksMixin, ResourceDeleteMessageMixin,
 import csv
 
 from django.contrib import messages
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotAllowed, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.cache import patch_vary_headers
@@ -117,7 +117,53 @@ class ResourceListContextMixin(ResourceContextMixin):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["list_display"] = self.resource.list_display
+        context.update(self.resource.get_bulk_context(self.request))
         return context
+
+
+class ResourceBulkActionsMixin:
+    """Optional POST actions, after the list's normal dispatch permissions.
+
+    Selection is an explicit nonempty list of primary keys. Every selected row
+    must belong to the scoped, searched, filtered queryset; forged/missing rows
+    reject the entire operation. Actions run atomically on the selected queryset
+    (not on the paginated page). ValidationError rolls back and becomes a message.
+    ORM bulk writes do not call Resource hooks/signals; run() must implement any
+    required per-object logic. Use on_commit() for external side effects. This
+    does not lock rows against concurrent scope/permission changes.
+    """
+
+    def post(self, request, *args, **kwargs):
+        resource = self.resource
+        actions = resource.get_bulk_actions(request)
+        if not actions:
+            return HttpResponseNotAllowed(["GET", "HEAD", "OPTIONS"])
+        action = next((a for a in actions if a["name"] == request.POST.get("bulk_action")), None)
+        if action is None:
+            return HttpResponseBadRequest("Unknown bulk action.")
+        if not resource.has_bulk_action_permission(action, request):
+            raise PermissionDenied("Bulk action not permitted.")
+        selected = request.POST.getlist("selected")
+        if not selected:
+            return HttpResponseBadRequest("Select at least one object.")
+        try:
+            selected = {resource.model._meta.pk.to_python(value) for value in selected}
+        except (DjangoValidationError, ValueError, TypeError, OverflowError):
+            return HttpResponseBadRequest("Invalid selection.")
+        try:
+            with transaction.atomic():
+                queryset = self.get_queryset().filter(pk__in=selected)
+                if set(queryset.values_list("pk", flat=True)) != selected:
+                    raise PermissionDenied("Selection is outside the available queryset.")
+                action["run"](queryset, request)
+        except DjangoValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, str(action["label"]))
+        url = resource.get_success_url_list()
+        if request.GET:
+            url += "?" + request.GET.urlencode()
+        return HttpResponseRedirect(url)
 
 
 class ResourceQuerysetMixin:

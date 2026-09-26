@@ -758,3 +758,42 @@ Les relations s’affichent comme dans le tableau HTML. Les chaînes ressemblant
 à des formules de tableur sont préfixées par `'` par sécurité. La réponse est
 construite en mémoire ; surchargez `export_csv(queryset)` sur la vue liste générée
 pour de très gros volumes ou un format différent.
+
+## Actions groupées (optionnelles)
+
+```python
+class ArchiveArticles:
+    name = "archive"
+    label = "Archiver les articles sélectionnés"
+
+    def run(self, queryset, request):
+        queryset.update(actif=False)
+
+class ArticleActionsResource(ArticleScopedResource):
+    bulk_actions = [ArchiveArticles()]
+
+    def has_bulk_action_permission(self, action, request):
+        return request.user.has_perm("articles.change_article")
+```
+
+Un dict avec `name`, `label` et un callable `run(queryset, request)` convient aussi.
+Les noms doivent être uniques. `bulk_actions = []` conserve l’affichage existant
+et refuse POST (405). Les trois thèmes et composants injectés affichent cases à
+cocher et sélecteur lorsque les actions sont autorisées. POST transmet
+`bulk_action` et les **clés primaires** répétées `selected`, même avec des URLs
+par slug. Le formulaire vise la liste générée et conserve recherche, filtres et tri.
+
+Les permissions de liste passent en premier ; `has_bulk_action_permission()`
+ajoute un contrôle par action (défaut : autoriser les utilisateurs de la liste,
+**anonymes inclus pour une ressource publique**). Tous les objets sélectionnés
+doivent appartenir au queryset filtré et isolé. Un objet absent/étranger fait
+refuser toute l’opération (403) ; sélection mal formée/vide ou action inconnue :
+400. L’action est transactionnelle ; une `ValidationError` Django annule les
+écritures et affiche une erreur. Le queryset sélectionné n’est pas paginé.
+
+`get_bulk_actions(request)` permet des actions selon la requête. Les permissions
+supplémentaires par objet appartiennent à `run()`. Les écritures ORM groupées
+contournent hooks et signaux Resource : implémentez cette logique explicitement
+si nécessaire. Utilisez `transaction.on_commit` pour les effets externes. Les
+lignes ne sont pas verrouillées contre les changements concurrents de scope.
+Le middleware CSRF doit rester activé dans le projet hôte.

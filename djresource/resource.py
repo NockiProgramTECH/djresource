@@ -90,6 +90,7 @@ from .mixins import (
     ResourceFilterMixin,
     ResourceFormActionMixin,
     ResourceListContextMixin,
+    ResourceBulkActionsMixin,
     ResourceLookupMixin,
     ResourceOrderingMixin,
     ResourceQuerysetMixin,
@@ -142,6 +143,7 @@ class Resource:
     public = False
     inlines: list = []
     htmx = False
+    bulk_actions: list = []
     readonly_fields: list = []
     list_display: list | None = None
     search_fields: list = []
@@ -544,6 +546,52 @@ class Resource:
             attrs["test_func"] = lambda view: self.test_func(view.request)
         return attrs
 
+    def get_bulk_actions(self, request):
+        """Return validated action dicts; override for request-specific actions.
+
+        Accepts objects or dicts with unique nonempty name, label, callable run.
+        Returning an action only registers it; has_bulk_action_permission is
+        checked independently before execution. Never mutate shared class lists.
+        """
+        from django.core.exceptions import ImproperlyConfigured
+
+        actions = []
+        names = set()
+        for action in self.bulk_actions:
+            get = action.get if isinstance(action, dict) else lambda key: getattr(action, key, None)
+            name, label, run = get("name"), get("label"), get("run")
+            if not isinstance(name, str) or not name or name in names or not label or not callable(run):
+                raise ImproperlyConfigured("Bulk actions need unique names, labels and callable run(queryset, request).")
+            names.add(name)
+            actions.append({"name": name, "label": label, "run": run})
+        return actions
+
+    def has_bulk_action_permission(self, action, request):
+        """Additional action authorization, after normal list permissions.
+
+        Defaults to True: registering an action enables it for every user allowed
+        to access the list (including anonymous users on public resources).
+        Override for model/business permissions. Per-object checks, if needed,
+        belong in run(); its queryset is already scoped and filtered.
+        """
+        return True
+
+    def get_bulk_context(self, request):
+        """Controls shared by generated lists and injected components.
+
+        POST always targets the generated list, retaining the current query
+        parameters. Actions receive primary keys, independently of lookup_field.
+        """
+        actions = [
+            {"name": action["name"], "label": action["label"]}
+            for action in self.get_bulk_actions(request)
+            if self.has_bulk_action_permission(action, request)
+        ]
+        url = self.get_success_url_list() if actions else ""
+        if actions and request is not None and request.GET:
+            url += "?" + request.GET.urlencode()
+        return {"bulk_actions": actions, "bulk_action_url": url}
+
     # ------------------------------------------------------------------
     # Route names
     # ------------------------------------------------------------------
@@ -596,6 +644,7 @@ class Resource:
         page_obj = paginator.get_page(page_number)
 
         context = self._base_url_context()
+        context.update(self.get_bulk_context(request))
         context.update({
             "object_list": page_obj.object_list,
             "list_display": self.list_display,
@@ -669,6 +718,7 @@ class Resource:
         resource = self
         bases = (
             ResourceListContextMixin,
+            ResourceBulkActionsMixin,
             ResourceSearchMixin,
             ResourceOrderingMixin,
             ResourceFilterMixin,

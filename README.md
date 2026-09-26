@@ -753,3 +753,40 @@ scope, with UTF-8 CSV quoting and a download filename. Relations are displayed
 as in the HTML table. Spreadsheet formula-like strings are prefixed with `'`
 for safety. The response is buffered in memory; override `export_csv(queryset)`
 on the generated list view for very large datasets or a different format.
+
+## Bulk actions (opt-in)
+
+```python
+class ArchiveArticles:
+    name = "archive"
+    label = "Archive selected articles"
+
+    def run(self, queryset, request):
+        queryset.update(actif=False)
+
+class ArticleActionsResource(ArticleScopedResource):
+    bulk_actions = [ArchiveArticles()]
+
+    def has_bulk_action_permission(self, action, request):
+        return request.user.has_perm("articles.change_article")
+```
+
+A dict with `name`, `label`, and a callable `run(queryset, request)` also works.
+Names must be unique. `bulk_actions = []` preserves the existing list appearance
+and rejects POST (405). All three themes and injected list components show
+checkboxes and an action selector when actions are authorized. POST submits
+`bulk_action` and repeated `selected` **primary keys**, even for slug-based URLs.
+The form targets the generated list URL and retains search/filter/sort parameters.
+
+List permissions run first; `has_bulk_action_permission()` adds per-action checks
+(default: allow list users, **including anonymous users for public resources**).
+Every selected object must be in the scoped, filtered queryset. Missing/foreign
+objects reject the entire operation (403), malformed/empty selections or unknown
+actions return 400. Actions run in a transaction; Django `ValidationError` rolls
+back writes and displays an error. The selected queryset is not paginated.
+
+`get_bulk_actions(request)` can supply request-specific actions. Put any extra
+per-object authorization in `run()`. ORM bulk writes bypass Resource hooks and
+signals, so implement that logic explicitly if needed. Use `transaction.on_commit`
+for external effects. Rows are not locked against concurrent scope changes.
+CSRF middleware must remain enabled in the host project.

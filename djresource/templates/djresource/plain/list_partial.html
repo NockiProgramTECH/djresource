@@ -8,9 +8,15 @@
 </form>
 {% endif %}
 
+{% if bulk_actions %}
+<form method="post" action="{{ bulk_action_url }}">
+    {% csrf_token %}
+    {% include "djresource/_bulk_actions.html" %}
+{% endif %}
 <table class="djr-table">
     <thead>
         <tr>
+            {% if bulk_actions %}<th scope="col">Sélection</th>{% endif %}
             {% for field in list_display %}
             <th>
                 {% if field in resource.ordering_fields %}
@@ -27,6 +33,7 @@
     <tbody>
         {% for object in object_list %}
         <tr>
+            {% if bulk_actions %}<td><input type="checkbox" name="selected" value="{{ object.pk }}" aria-label="Sélectionner {{ object }}"></td>{% endif %}
             {% for field in list_display %}<td>{{ object|get_attr:field }}</td>{% endfor %}
             <td class="djr-actions">
                 <a href="{% url url_detail object|get_attr:resource.lookup_field %}" class="djr-btn djr-btn--link">Voir</a>
@@ -35,10 +42,12 @@
             </td>
         </tr>
         {% empty %}
-        <tr><td class="djr-empty" colspan="{{ list_display|length|add:1 }}">Aucun résultat.</td></tr>
+        <tr><td class="djr-empty" colspan="{% if bulk_actions %}{{ list_display|length|add:2 }}{% else %}{{ list_display|length|add:1 }}{% endif %}">Aucun résultat.</td></tr>
         {% endfor %}
     </tbody>
 </table>
+
+{% if bulk_actions %}</form>{% endif %}
 
 {% if is_paginated %}
 <div class="djr-pagination">
