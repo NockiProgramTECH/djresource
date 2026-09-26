@@ -575,11 +575,28 @@ complètes de chaque thème.
    la modification, la suppression et les contextes injectés :
 
    ```python
-   def scope_queryset(self, queryset, request):
-       return queryset.filter(owner=request.user)
+   class ArticleScopedResource(Resource):
+       model = Article
+       fields = ["titre", "slug"]
+
+       def scope_queryset(self, queryset, request=None):
+           if request is None or not request.user.is_authenticated:
+               return queryset.none()
+           return queryset.filter(owner=request.user)
+
+       def before_save(self, instance, request, is_new):
+           if is_new:
+               instance.owner = request.user
    ```
 
-3. **Écriture interdite par défaut.** `fields = []` est la valeur par défaut.
+   Par défaut, `get_permissions()` retourne `[LoginRequiredMixin]` (ou `[]`
+   avec `public = True`). Une surcharge remplace cette politique : conservez
+   l’authentification dans vos mixins personnalisés. L’accès public inclut les
+   écritures. La connexion seule ne garantit ni les permissions modèle ni
+   l’isolation par propriétaire. Le scope ne filtre pas les choix FK/M2M des
+   formulaires : adaptez `get_form_class()` pour limiter les objets autorisés.
+
+3. **Aucun champ modifiable par défaut.** `fields = []` est la valeur par défaut.
    Listez explicitement les champs autorisés en écriture. La valeur historique
    `fields = "__all__"` reste supportée avec un `FieldsAllWarning` pour
    compatibilité, mais ne doit pas être utilisée avec des champs sensibles.
@@ -603,7 +620,7 @@ complètes de chaque thème.
 6. **Projet de démo (`demo/`) : ne pas utiliser tel quel en production**
    (`SECRET_KEY` codée en dur, `DEBUG = True`, `ALLOWED_HOSTS = ["*"]`).
 
-## Options de configuration disponibles (V1)
+## Options de configuration disponibles
 
 | Attribut | Rôle |
 |---|---|
@@ -623,6 +640,12 @@ complètes de chaque thème.
 | `template_list/detail/form/delete` | Surcharge d'un template précis |
 | `get_extra_context(view)` | Injecte des données métier dans le contexte de toutes les vues |
 | `get_list_context/get_form_context/get_detail_context` | Contexte calculé hors vue (affichage 100% custom) |
+| `inlines` | Définitions inline ; liste vide par défaut |
+| `clean(instance, request)` | Valider avant sauvegarde ; lever ValidationError |
+| `before_save(instance, request, is_new)` | Modifier avant sauvegarde |
+| `after_save(instance, request, is_new)` | Réagir après parent/M2M, avant les inlines |
+| `before_delete(instance, request)` | Bloquer la suppression avec ValidationError |
+| `after_delete(instance, request)` | Réagir après suppression |
 | `public` | Active explicitement l'accès sans authentification |
 | `get_permissions()` | Mixins de permission supplémentaires (authentification par défaut) |
 | `scope_queryset(queryset, request)` / `get_queryset(request)` | Isolation des objets selon la requête |
@@ -662,8 +685,7 @@ python manage.py runserver
 ## Lancer les tests
 
 ```bash
-cd demo
-python manage.py test
+python runtests.py
 ```
 
 ## Hooks métier et formsets inline

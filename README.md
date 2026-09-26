@@ -574,11 +574,28 @@ pages of each theme.
    for list, detail, update, delete, and all injected contexts:
 
    ```python
-   def scope_queryset(self, queryset, request):
-       return queryset.filter(owner=request.user)
+   class ArticleScopedResource(Resource):
+       model = Article
+       fields = ["titre", "slug"]
+
+       def scope_queryset(self, queryset, request=None):
+           if request is None or not request.user.is_authenticated:
+               return queryset.none()
+           return queryset.filter(owner=request.user)
+
+       def before_save(self, instance, request, is_new):
+           if is_new:
+               instance.owner = request.user
    ```
 
-3. **Writing is deny-by-default.** `fields = []` is the default. Explicitly
+   The default `get_permissions()` returns `[LoginRequiredMixin]` (or `[]`
+   when `public = True`). Overriding it replaces that policy: keep authentication
+   in your custom mixins. Public access includes writes, not just reads.
+   Authentication alone does not grant model-level or owner-level isolation.
+   Scope does not restrict form relation choices; customize `get_form_class()`
+   to restrict writable FK/M2M choices to authorized objects.
+
+3. **No writable fields by default.** `fields = []` is the default. Explicitly
    list the fields allowed for writing. The legacy `fields = "__all__"` value
    remains supported with a `FieldsAllWarning` for compatibility, but should
    not be used for sensitive models.
@@ -602,7 +619,7 @@ pages of each theme.
 6. **Demo project (`demo/`): do not use as is in production**
    (`SECRET_KEY` hard-coded, `DEBUG = True`, `ALLOWED_HOSTS = ["*"]`).
 
-## Available configuration options (V1)
+## Available configuration options
 
 | Attribute | Role |
 |---|---|
@@ -622,6 +639,12 @@ pages of each theme.
 | `template_list/detail/form/delete` | Override for a specific template |
 | `get_extra_context(view)` | Injects business data into the context of all views |
 | `get_list_context/get_form_context/get_detail_context` | Context computed outside the view (100% custom display) |
+| `inlines` | Inline definitions; empty by default |
+| `clean(instance, request)` | Validate before saving; raise ValidationError |
+| `before_save(instance, request, is_new)` | Modify before saving |
+| `after_save(instance, request, is_new)` | React after parent/M2M saving, before inlines |
+| `before_delete(instance, request)` | Veto deletion with ValidationError |
+| `after_delete(instance, request)` | React after deletion |
 | `public` | Explicitly opt a resource out of default authentication |
 | `get_permissions()` | Additional permission mixins; default is `LoginRequiredMixin` |
 | `scope_queryset(queryset, request)` / `get_queryset(request)` | Request-aware object isolation |
@@ -661,8 +684,7 @@ python manage.py runserver
 ## Running the tests
 
 ```bash
-cd demo
-python manage.py test
+python runtests.py
 ```
 
 ## Business hooks and inline formsets

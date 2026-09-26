@@ -1,5 +1,23 @@
 # Changelog — DjResource
 
+## [0.2.0] — Unreleased
+
+### Added
+- Authentication by default (`LoginRequiredMixin`), with explicit `public = True` opt-out; permissions also enforced for injected contexts.
+- Request-aware `scope_queryset()` / `get_queryset(request)` across all object access paths.
+- Explicit writable fields (empty default); warning for legacy `fields = "__all__"`.
+- `list_filter` for validated boolean/choice filters combined with search and ordering.
+- `readonly_fields`, custom `lookup_field` / URL converter, and per-field `widget_classes` / `widget_attrs`.
+- Business hooks: `clean`, `before_save`, `after_save`, `before_delete`, `after_delete`.
+- Optional `inlines`: validation and atomic parent/child saving, built-in form rendering.
+- Raw-data template tags and context helpers for lists, forms and details.
+- File upload forms and relation display support.
+
+### Fixed
+- Wire save/delete hooks and inline formsets into generated HTTP views.
+- Preserve bound inline errors, do not save after a validation veto, and roll back parent writes on inline failure.
+- No misleading success message when deletion is vetoed.
+
 ## [0.1.0] — 2026-09-03
 
 ### Added

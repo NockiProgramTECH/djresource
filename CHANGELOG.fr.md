@@ -1,5 +1,23 @@
 # Journal des modifications — DjResource
 
+## [0.2.0] — Non publiée
+
+### Ajouté
+- Authentification par défaut (`LoginRequiredMixin`), désactivation explicite avec `public = True` ; permissions aussi appliquées aux contextes injectés.
+- `scope_queryset()` / `get_queryset(request)` selon la requête pour tous les accès aux objets.
+- Champs modifiables explicites (liste vide par défaut) ; avertissement pour `fields = "__all__"`.
+- `list_filter` : filtres booléens/choix validés, combinés à la recherche et au tri.
+- `readonly_fields`, `lookup_field` / convertisseur d’URL personnalisables, `widget_classes` / `widget_attrs` par champ.
+- Hooks métier : `clean`, `before_save`, `after_save`, `before_delete`, `after_delete`.
+- `inlines` optionnels : validation, sauvegarde atomique parent/enfants, rendu dans les formulaires fournis.
+- Balises de données brutes et méthodes de contexte pour listes, formulaires et détails.
+- Formulaires avec fichiers et affichage des relations.
+
+### Corrigé
+- Branchement des hooks sauvegarde/suppression et des inlines aux vues HTTP générées.
+- Conservation des erreurs inline, absence de sauvegarde après refus de validation, annulation du parent en cas d’échec inline.
+- Aucun faux message de succès après un refus de suppression.
+
 ## [0.1.0] — 2026-09-03
 
 ### Ajouté
