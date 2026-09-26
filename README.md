@@ -713,3 +713,21 @@ class ArticleWithNotesResource(Resource):
 Formsets are validated before any write and saved after the parent receives its
 pk. Each inline must have a distinct formset prefix. Built-in form templates
 render management fields and errors. Custom forms must render `inline_formsets`.
+
+## Django signals
+
+```python
+from django.dispatch import receiver
+from djresource.signals import resource_post_save
+
+@receiver(resource_post_save, sender=Article)
+def article_saved(sender, instance, resource, **kwargs):
+    pass  # react without subclassing Resource
+```
+
+`resource_pre_save` follows `before_save`; `resource_post_save` follows
+`after_save` (parent/M2M saved, inlines not yet saved); `resource_post_delete`
+follows `after_delete` (pk cleared). All pass `instance` and `resource`, with
+`sender=resource.model`. Validation vetoes emit nothing. Receivers run
+synchronously, exceptions propagate; use `transaction.on_commit()` for external
+effects. Direct ORM writes and bulk operations do not emit these signals.

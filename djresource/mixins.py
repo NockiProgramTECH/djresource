@@ -27,6 +27,8 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 
+from .signals import resource_pre_save, resource_post_save, resource_post_delete
+
 
 # ---------------------------------------------------------------------
 # Common context (all generated views)
@@ -210,10 +212,12 @@ class ResourceSaveHooksMixin:
             return self.form_invalid(form)
 
         resource.before_save(instance, self.request, is_new)
+        resource_pre_save.send(sender=resource.model, instance=instance, resource=resource)
         instance.save()
         if hasattr(form, "save_m2m"):
             form.save_m2m()
         resource.after_save(instance, self.request, is_new)
+        resource_post_save.send(sender=resource.model, instance=instance, resource=resource)
 
         self.object = instance
         return HttpResponseRedirect(self.get_success_url())
@@ -237,6 +241,7 @@ class ResourceDeleteHooksMixin:
 
         response = super().form_valid(form)  # performs the actual deletion (Django)
         resource.after_delete(instance, self.request)
+        resource_post_delete.send(sender=resource.model, instance=instance, resource=resource)
         return response
 
 

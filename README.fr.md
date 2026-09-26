@@ -716,3 +716,22 @@ Les formsets sont validés avant toute écriture et sauvegardés après attribut
 du pk parent. Chaque inline doit avoir un préfixe de formset distinct. Les thèmes
 fournis affichent les champs de gestion et les erreurs. Les formulaires
 personnalisés doivent afficher `inline_formsets`.
+
+## Signaux Django
+
+```python
+from django.dispatch import receiver
+from djresource.signals import resource_post_save
+
+@receiver(resource_post_save, sender=Article)
+def article_saved(sender, instance, resource, **kwargs):
+    pass  # réagir sans hériter de Resource
+```
+
+`resource_pre_save` suit `before_save` ; `resource_post_save` suit `after_save`
+(parent/M2M sauvegardés, pas encore les inlines) ; `resource_post_delete` suit
+`after_delete` (pk effacé). Tous transmettent `instance` et `resource`, avec
+`sender=resource.model`. Un refus de validation n’émet rien. Les récepteurs sont
+synchrones, leurs exceptions se propagent ; utilisez `transaction.on_commit()`
+pour les effets externes. Les écritures ORM directes et opérations groupées
+n’émettent pas ces signaux.
