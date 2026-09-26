@@ -12,13 +12,21 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.11", "3.12"]
-        django-version: ["4.2", "5.0", "5.1"]
+        django-version: ["4.2", "5.0", "5.1", "5.2", "6.0"]
         exclude:
           # Django 5.x exige Python >= 3.10
           - python-version: "3.9"
             django-version: "5.0"
           - python-version: "3.9"
             django-version: "5.1"
+          - python-version: "3.9"
+            django-version: "5.2"
+          # https://docs.djangoproject.com/en/6.0/releases/6.0/#python-compatibility
+          # Django 6.0 exige Python >= 3.12.
+          - python-version: "3.9"
+            django-version: "6.0"
+          - python-version: "3.11"
+            django-version: "6.0"
     steps:
       - uses: actions/checkout@v4
 
