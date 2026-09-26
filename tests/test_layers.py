@@ -112,3 +112,53 @@ class HTMXTests(LayerTestCase):
             self.request(user=AnonymousUser(), HTTP_HX_REQUEST="true")
         )
         self.assertEqual(response.status_code, 302)
+
+
+class CSVTests(LayerTestCase):
+    def rows(self, response):
+        import csv
+        import io
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response["Content-Type"].startswith("text/csv"))
+        self.assertIn("attachment", response["Content-Disposition"])
+        return list(csv.reader(io.StringIO(response.content.decode())))
+
+    def test_export_applies_scope_search_filter_sort_but_not_pagination(self):
+        from .resources import ArticleScopedResource
+        resource = ArticleScopedResource()
+        resource.search_fields = ["titre"]
+        resource.ordering_fields = ["titre"]
+        resource.paginate_by = 1
+        resource.list_display = ["titre", "slug"]
+        for titre, slug, owner, actif in [
+            ("Match A", "a", self.user, True), ("Match B", "b", self.user, True),
+            ("Match foreign", "foreign", None, True), ("Other", "other", self.user, True),
+            ("Match inactive", "inactive", self.user, False),
+        ]:
+            Article.objects.create(titre=titre, slug=slug, owner=owner, actif=actif)
+        response = resource.get_list_view().as_view()(self.request(data={
+            "export": "csv", "q": "Match", "actif": "true", "sort": "titre",
+            "dir": "desc", "page": "999",
+        }))
+        self.assertEqual(self.rows(response), [["titre", "slug"], ["Match B", "b"], ["Match A", "a"]])
+
+    def test_csv_unicode_escaping_formulas_and_empty_results(self):
+        resource = self.resource
+        resource.list_display = ["titre"]
+        view = resource.get_list_view().as_view()
+        self.assertEqual(self.rows(view(self.request(data={"export": "csv"}))), [["titre"]])
+        Article.objects.create(titre='Été, "riz"\nlocal', slug="a")
+        Article.objects.create(titre='=HYPERLINK("bad")', slug="b")
+        rows = self.rows(view(self.request(data={"export": "csv"})))
+        self.assertIn(['Été, "riz"\nlocal'], rows)
+        self.assertIn(['\'=HYPERLINK("bad")'], rows)
+
+    def test_export_uses_list_permissions(self):
+        from .resources import ArticleDefaultProtectedResource, ArticleBusinessProtectedResource
+        from django.core.exceptions import PermissionDenied
+        request = self.request(data={"export": "csv"}, user=AnonymousUser())
+        self.assertEqual(ArticleDefaultProtectedResource().get_list_view().as_view()(request).status_code, 302)
+        with self.assertRaises(PermissionDenied):
+            ArticleBusinessProtectedResource().get_list_view().as_view()(
+                self.request(data={"export": "csv"})
+            )

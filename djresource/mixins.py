@@ -19,11 +19,13 @@ listed runs first).
 For Delete: ResourceDeleteHooksMixin, ResourceDeleteMessageMixin,
 *permissions, DeleteView. The hook must reject deletion before success messaging.
 """
+import csv
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.cache import patch_vary_headers
@@ -81,7 +83,36 @@ class ResourceContextMixin(ResourceHTMXMixin):
 
 
 class ResourceListContextMixin(ResourceContextMixin):
-    """Adds the columns to display (list_display) to the list context."""
+    """List columns and CSV export of the full scoped, filtered, sorted queryset.
+
+    Export is buffered in memory (not intended for huge datasets). Values use
+    the same attribute/relation resolver as templates. String cells beginning
+    with spreadsheet formula markers are prefixed with an apostrophe; this
+    deliberately changes their raw representation to prevent formula injection.
+    Normal dispatch permissions run before get(), including for exports.
+    """
+
+    def get(self, request, *args, **kwargs):
+        if request.GET.get("export") == "csv":
+            return self.export_csv(self.get_queryset())
+        return super().get(request, *args, **kwargs)
+
+    def export_csv(self, queryset):
+        """Export all list_display columns, without applying pagination."""
+        from .templatetags.djresource_tags import get_attr
+
+        def safe_cell(value):
+            if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
+                return "'" + value
+            return value
+
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{self.resource.name}.csv"'
+        writer = csv.writer(response)
+        writer.writerow([safe_cell(field) for field in self.resource.list_display])
+        for obj in queryset:
+            writer.writerow([safe_cell(get_attr(obj, field)) for field in self.resource.list_display])
+        return response
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

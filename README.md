@@ -743,3 +743,13 @@ unchanged. Permissions and CSRF remain enforced, and responses vary on
 with `hx-target="#articles"` on a button. Partial selection uses the theme;
 full-page template overrides are not reused as partials. Override the generated
 view's `get_template_names()` for a custom partial.
+
+## CSV export
+
+Append `?export=csv` to the generated list URL, retaining `q`, filter fields,
+`sort` and `dir` as needed. The export contains `list_display` columns and **all**
+matching rows, ignoring pagination. It uses the list's permissions and owner
+scope, with UTF-8 CSV quoting and a download filename. Relations are displayed
+as in the HTML table. Spreadsheet formula-like strings are prefixed with `'`
+for safety. The response is buffered in memory; override `export_csv(queryset)`
+on the generated list view for very large datasets or a different format.

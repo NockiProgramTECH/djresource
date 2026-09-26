@@ -747,3 +747,14 @@ et les réponses varient selon `HX-Request`. Chargez HTMX vous-même ; par exemp
 un bouton peut utiliser `hx-get="/articles/"` et `hx-target="#articles"`.
 La sélection des partiels suit le thème, pas les surcharges de page complète.
 Surchargez `get_template_names()` de la vue générée pour un partiel personnalisé.
+
+## Export CSV
+
+Ajoutez `?export=csv` à l’URL de liste générée, en conservant `q`, les filtres,
+`sort` et `dir` si nécessaire. L’export contient les colonnes `list_display` et
+**toutes** les lignes correspondantes, sans pagination. Il applique permissions
+et isolation de la liste, avec échappement CSV UTF-8 et nom de téléchargement.
+Les relations s’affichent comme dans le tableau HTML. Les chaînes ressemblant
+à des formules de tableur sont préfixées par `'` par sécurité. La réponse est
+construite en mémoire ; surchargez `export_csv(queryset)` sur la vue liste générée
+pour de très gros volumes ou un format différent.
